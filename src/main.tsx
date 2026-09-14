@@ -1,31 +1,24 @@
 import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
-import React, { StrictMode, lazy, Suspense } from "react";
+import React, { StrictMode, memo } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 
-// Lazy load route components for better code splitting
-const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
-const Brain = lazy(() => import("./pages/Brain.tsx"));
-const Notes = lazy(() => import("./pages/Notes.tsx"));
-const Ideas = lazy(() => import("./pages/Ideas.tsx"));
-const Knowledge = lazy(() => import("./pages/Knowledge.tsx"));
-const Goals = lazy(() => import("./pages/Goals.tsx"));
-const Connections = lazy(() => import("./pages/Connections.tsx"));
-const Settings = lazy(() => import("./pages/Settings.tsx"));
-const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const AppShell = lazy(() => import("./components/AppShell.tsx"));
-
-// Simple loading fallback for route transitions
-function RouteLoading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-pulse text-muted-foreground">Loading...</div>
-    </div>
-  );
-}
+// Eager static imports — lazy route chunks caused a visible compile/parse
+// delay on first navigation in dev (the "laggy tab switch"). The app is one
+// product, so there is no real code-splitting win to trade for it.
+import AppShell from "./components/AppShell.tsx";
+import Dashboard from "./pages/Dashboard.tsx";
+import Brain from "./pages/Brain.tsx";
+import Notes from "./pages/Notes.tsx";
+import Ideas from "./pages/Ideas.tsx";
+import Knowledge from "./pages/Knowledge.tsx";
+import Goals from "./pages/Goals.tsx";
+import Connections from "./pages/Connections.tsx";
+import Settings from "./pages/Settings.tsx";
+import NotFound from "./pages/NotFound.tsx";
 
 /** Silent error boundary — if VlyToolbar crashes it renders nothing instead of
  *  crashing the whole app (e.g. hook errors in WebContainer environment). */
@@ -84,13 +77,14 @@ class RootErrorBoundary extends React.Component<
 }
 
 function RouteSyncer() {
-  const location = useLocation();
+  const pathname = useLocation().pathname;
+
   React.useEffect(() => {
     window.parent.postMessage(
-      { type: "iframe-route-change", path: location.pathname },
+      { type: "iframe-route-change", path: pathname },
       "*",
     );
-  }, [location.pathname]);
+  }, [pathname]);
 
   React.useEffect(() => {
     function handleMessage(event: MessageEvent) {
@@ -106,6 +100,9 @@ function RouteSyncer() {
   return null;
 }
 
+// Never re-renders; kept out of the router's render work.
+const MemoRouteSyncer = memo(RouteSyncer);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
@@ -114,24 +111,22 @@ createRoot(document.getElementById("root")!).render(
       </ToolbarErrorBoundary>
       {/* Phase 1: no auth — the whole app is the prototype */}
       <BrowserRouter>
-        <RouteSyncer />
-        <Suspense fallback={<RouteLoading />}>
-          <Routes>
-            <Route element={<AppShell />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/brain" element={<Brain />} />
-              <Route path="/notes" element={<Notes />} />
-              <Route path="/ideas" element={<Ideas />} />
-              <Route path="/knowledge" element={<Knowledge />} />
-              <Route path="/goals" element={<Goals />} />
-              <Route path="/connections" element={<Connections />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<NotFound />} />
-            </Route>
-          </Routes>
-        </Suspense>
+        <MemoRouteSyncer />
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/brain" element={<Brain />} />
+            <Route path="/notes" element={<Notes />} />
+            <Route path="/ideas" element={<Ideas />} />
+            <Route path="/knowledge" element={<Knowledge />} />
+            <Route path="/goals" element={<Goals />} />
+            <Route path="/connections" element={<Connections />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
+        </Routes>
+        <Toaster />
       </BrowserRouter>
-      <Toaster />
     </RootErrorBoundary>
   </StrictMode>,
 );

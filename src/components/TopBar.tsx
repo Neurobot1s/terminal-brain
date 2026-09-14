@@ -1,7 +1,7 @@
 /**
  * TopBar — search/command trigger (⌘K), Live button, notifications, profile.
  */
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
   Bell,
@@ -28,7 +28,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function TopBar({ onMenu }: { onMenu: () => void }) {
+export const TopBar = memo(function TopBar({ onMenu }: { onMenu: () => void }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -48,15 +48,22 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const pages = NAV_ITEMS.filter((n) =>
-    n.label.toLowerCase().includes(query.toLowerCase()),
+  const pages = useMemo(
+    () =>
+      NAV_ITEMS.filter((n) =>
+        n.label.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [query],
   );
-  const allItems = [
-    ...notes.map((n) => ({ kind: "note" as const, title: n.title, id: n.id })),
-    ...ideas.map((i) => ({ kind: "idea" as const, title: i.title, id: i.id })),
-    ...goals.map((g) => ({ kind: "goal" as const, title: g.title, id: g.id })),
-    ...knowledge.map((k) => ({ kind: "knowledge" as const, title: k.title, id: k.id })),
-  ].filter((it) => it.title.toLowerCase().includes(query.toLowerCase()));
+  const allItems = useMemo(() => {
+    const q = query.toLowerCase();
+    return [
+      ...notes.map((n) => ({ kind: "note" as const, title: n.title, id: n.id })),
+      ...ideas.map((i) => ({ kind: "idea" as const, title: i.title, id: i.id })),
+      ...goals.map((g) => ({ kind: "goal" as const, title: g.title, id: g.id })),
+      ...knowledge.map((k) => ({ kind: "knowledge" as const, title: k.title, id: k.id })),
+    ].filter((it) => it.title.toLowerCase().includes(q));
+  }, [notes, ideas, goals, knowledge, query]);
 
   const kindRoute: Record<string, string> = {
     note: "/notes",
@@ -65,11 +72,16 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
     knowledge: "/knowledge",
   };
 
-  const recent = activity.slice(0, 3);
+  const recent = useMemo(() => activity.slice(0, 3), [activity]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setQuery("");
+  }, []);
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md sm:px-5">
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background px-3 sm:px-5">
         <button
           onClick={onMenu}
           aria-label="Open menu"
@@ -161,10 +173,7 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
       {/* Command search modal */}
       <Modal
         open={searchOpen}
-        onOpenChange={(v) => {
-          setSearchOpen(v);
-          if (!v) setQuery("");
-        }}
+        onOpenChange={(v) => (v ? setSearchOpen(true) : closeSearch())}
         title="Search"
         subtitle="$ neurobot query --ui"
       >
@@ -227,4 +236,4 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
       <LiveModal open={liveOpen} onOpenChange={setLiveOpen} />
     </>
   );
-}
+});

@@ -1,13 +1,14 @@
 /**
  * Sidebar — collapsible terminal nav. On mobile it becomes an overlay drawer.
  */
+import { memo, useCallback } from "react";
 import { Link, useLocation } from "react-router";
 import { ChevronLeft, PanelLeftOpen, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS, APP_NAME, TAGLINE, SESSION, OWNER_CREDIT } from "@/config/nav";
 import { useBrainStore } from "@/components/BrainProvider";
 
-export function Sidebar({
+const Sidebar = memo(function Sidebar({
   collapsed,
   onToggle,
   mobileOpen,
@@ -21,6 +22,8 @@ export function Sidebar({
   const { pathname } = useLocation();
   const { notes, ideas, goals, knowledge } = useBrainStore();
   const total = notes.length + ideas.length + goals.length + knowledge.length;
+
+  const closeMobile = useCallback(() => onMobileClose(), [onMobileClose]);
 
   const content = (
     <div className="flex h-full flex-col">

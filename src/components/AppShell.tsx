@@ -2,7 +2,7 @@
  * AppShell — persistent layout: desktop sidebar, top bar, mobile bottom nav,
  * routed page content.
  */
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "@/config/nav";
@@ -10,11 +10,12 @@ import { BrainProvider } from "@/components/BrainProvider";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 
-function BottomNav() {
+/** Memoized: only re-renders when the active route actually changes. */
+const BottomNav = memo(function BottomNav() {
   const { pathname } = useLocation();
-  const items = NAV_ITEMS.slice(0, 5);
+  const items = useMemo(() => NAV_ITEMS.slice(0, 5), []);
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 hidden items-stretch justify-around border-t border-border bg-background pb-[env(safe-area-inset-bottom)] lg:flex lg:hidden">
       {items.map(({ to, label, icon: Icon }) => {
         const active = to === "/" ? pathname === "/" : pathname.startsWith(to);
         return (
@@ -58,7 +59,7 @@ function BottomNav() {
       </Link>
     </nav>
   );
-}
+});
 
 export default AppShell;
 
