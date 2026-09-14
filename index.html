@@ -2,16 +2,76 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="logo.svg" />
     <title>NeuroBot — Your Second Brain</title>
     <meta
       name="description"
       content="NeuroBot — your personal second brain. Capture, organize, connect and retrieve your knowledge, ideas and goals."
     />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div class="term-grid" id="grid-backdrop"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-inner">
+        <div class="sidebar-head">
+          <span class="logo-mark">▚</span>
+          <div class="logo-text">
+            <div class="logo-name">NeuroBot</div>
+            <div class="logo-tag">Your Second Brain.</div>
+          </div>
+        </div>
+        <nav class="nav" id="nav"></nav>
+        <div class="sidebar-foot">
+          <div class="profile-chip">
+            <span class="profile-avatar">TL</span>
+            <div class="min-w-0">
+              <div class="profile-name">Tanishq Lalwani</div>
+              <div class="profile-sub">local · phase 2</div>
+            </div>
+          </div>
+          <div class="brain-health">
+            <span class="bh-dot" id="bh-dot"></span>
+            <span id="bh-label">Brain health: good</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Main column -->
+    <div class="main-col" id="main-col">
+      <header class="topbar">
+        <button class="icon-btn" id="btn-menu" aria-label="Open menu">☰</button>
+        <button class="cmd-trigger" id="btn-cmd">
+          <span class="text-primary">&gt;</span>
+          <span class="cmd-text">Ask your brain anything…</span>
+          <span class="kbd-row"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+        </button>
+        <div class="topbar-actions">
+          <button class="btn btn-primary btn-live" id="btn-live">◉ Live</button>
+          <button class="icon-btn hide-sm" id="btn-keys" title="Keyboard shortcuts">⌨</button>
+          <button class="credit-btn hide-sm" id="btn-credits">✦ Credits</button>
+          <button class="icon-btn notif-btn" id="btn-notif" aria-label="Notifications">🔔<i class="notif-dot"></i></button>
+          <a class="profile-btn" href="#/settings" aria-label="Profile settings">TL</a>
+        </div>
+      </header>
+
+      <main class="page" id="page"></main>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <nav class="bottom-nav" id="bottom-nav"></nav>
+
+    <!-- Overlays -->
+    <div class="modal-backdrop" id="modal-root"></div>
+    <div class="cmdk-backdrop" id="cmdk-root"></div>
+
+    <script type="module" src="js/core.js"></script>
+    <script type="module" src="js/ai.js"></script>
+    <script type="module" src="js/views.js"></script>
   </body>
 </html>
