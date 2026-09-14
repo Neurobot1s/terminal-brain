@@ -12,7 +12,7 @@ export const OWNER_CREDIT = "Crafted by TANISHQ LALWANI";
 export const SESSION = "v2.1 · gemini";
 
 export const GEMINI_KEY = "AQ.Ab8RN6JvNBW1MK9_Hv41sCU7IjDuDr3MGnrWIVRGEDAACSSiQQ";
-export const GEMINI_MODEL = "gemini-2.5-flash";
+export const GEMINI_MODEL = "gemini-3.6-flash";
 
 export const NAV_ITEMS = [
   { to: "#/", label: "Dashboard", icon: "◈", glyph: "~/dash" },

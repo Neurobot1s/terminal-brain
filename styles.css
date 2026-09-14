@@ -55,6 +55,13 @@ kbd {
   font-size: 10px;
 }
 
+input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; }
+body.no-motion *, body.no-motion *::before, body.no-motion *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+}
+
 /* ---------- Backdrop ---------- */
 .term-grid {
   position: fixed;
@@ -77,6 +84,8 @@ kbd {
   z-index: 30;
   transition: transform 0.25s ease, width 0.25s ease;
 }
+.sidebar .btn { width: 100%; }
+.sidebar .btn-primary { color: var(--primary-contrast); }
 .sidebar-inner {
   height: 100%;
   display: flex;
