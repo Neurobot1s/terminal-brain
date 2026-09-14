@@ -1,9 +1,10 @@
 /**
- * Capture forms — modal forms for the four item kinds, persisted to
- * localStorage via the demo store.
+ * Capture forms — one universal modal for creating AND editing all four item
+ * kinds, persisted to localStorage via the shared store.
  */
-import { useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, Save } from "lucide-react";
+import { toast } from "sonner";
 import { Modal } from "@/components/Modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,9 +18,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ITEM_META, IDEA_STATUSES, GOAL_STATUSES } from "@/config/kinds";
-import type { BrainStore, GoalStatus, IdeaStatus } from "@/lib/store";
-import type { ItemKind } from "@/lib/store";
 import { KNOWLEDGE_TOPICS } from "@/lib/store";
+import type {
+  BrainStore,
+  Goal,
+  GoalStatus,
+  Idea,
+  IdeaStatus,
+  ItemKind,
+  KnowledgeItem,
+} from "@/lib/store";
 
 const CATEGORY_OPTIONS = [
   "General",
@@ -46,18 +54,23 @@ function Field({
   );
 }
 
-/** Generic capture modal used by QuickCapture and page headers. */
+export interface CaptureModalProps {
+  kind: ItemKind;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  store: BrainStore;
+  /** When provided the modal switches to edit mode for this item. */
+  editItem?: BrainStore["notes"][number] | Idea | Goal | KnowledgeItem;
+}
+
+/** Generic capture/edit modal used by QuickCapture, pages and the palette. */
 export function CaptureModal({
   kind,
   open,
   onOpenChange,
   store,
-}: {
-  kind: ItemKind;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  store: BrainStore;
-}) {
+  editItem,
+}: CaptureModalProps) {
   const meta = ITEM_META[kind];
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -68,6 +81,37 @@ export function CaptureModal({
   const [progress, setProgress] = useState(0);
   const [deadline, setDeadline] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Hydrate fields when opening (create) or when the edit target changes.
+  useEffect(() => {
+    if (!open) return;
+    setSaving(false);
+    if (editItem) {
+      setTitle(editItem.title);
+      setBody(editItem.body);
+      setProgress("progress" in editItem ? editItem.progress : 0);
+      setDeadline("deadline" in editItem ? editItem.deadline : "");
+      if (kind === "idea" && "category" in editItem && "status" in editItem) {
+        setCategory(editItem.category);
+        setStatus(editItem.status);
+      } else if (kind === "knowledge" && "topic" in editItem && "source" in editItem) {
+        setTopic(editItem.topic);
+        setSource(editItem.source);
+      } else if ("category" in editItem) {
+        setCategory(editItem.category);
+      }
+    } else {
+      setTitle("");
+      setBody("");
+      setCategory("General");
+      setTopic(KNOWLEDGE_TOPICS[0]);
+      setSource("");
+      setStatus(kind === "idea" ? "new" : "active");
+      setProgress(0);
+      setDeadline("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editItem, kind]);
 
   const reset = () => {
     setTitle("");
@@ -83,36 +127,68 @@ export function CaptureModal({
   const submit = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    // Brief async pause so the button shows a real loading state.
-    await new Promise((r) => setTimeout(r, 350));
-    if (kind === "note") {
-      store.addNote({ title: title.trim(), body: body.trim(), category });
-    } else if (kind === "idea") {
-      store.addIdea({
-        title: title.trim(),
-        body: body.trim(),
-        category,
-        status: status as IdeaStatus,
-      });
-    } else if (kind === "goal") {
-      store.addGoal({
-        title: title.trim(),
-        body: body.trim(),
-        progress,
-        deadline: deadline || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
-        status: status as GoalStatus,
-      });
+    await new Promise((r) => setTimeout(r, 250));
+    if (editItem) {
+      if (kind === "note") {
+        store.updateNote(editItem.id, { title: title.trim(), body: body.trim(), category });
+      } else if (kind === "idea") {
+        store.updateIdea(editItem.id, {
+          title: title.trim(),
+          body: body.trim(),
+          category,
+          status: status as IdeaStatus,
+        });
+      } else if (kind === "goal") {
+        store.updateGoal(editItem.id, {
+          title: title.trim(),
+          body: body.trim(),
+          progress,
+          deadline,
+          status: status as GoalStatus,
+        });
+      } else {
+        store.updateKnowledge(editItem.id, {
+          title: title.trim(),
+          body: body.trim(),
+          topic,
+          source: source.trim() || "captured manually",
+        });
+      }
+      toast.success(`${meta.label} updated.`);
     } else {
-      store.addKnowledge({
-        title: title.trim(),
-        body: body.trim(),
-        topic,
-        source: source.trim() || "captured manually",
-      });
+      if (kind === "note") {
+        store.addNote({ title: title.trim(), body: body.trim(), category });
+      } else if (kind === "idea") {
+        store.addIdea({
+          title: title.trim(),
+          body: body.trim(),
+          category,
+          status: status as IdeaStatus,
+        });
+      } else if (kind === "goal") {
+        store.addGoal({
+          title: title.trim(),
+          body: body.trim(),
+          progress,
+          deadline: deadline || new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+          status: status as GoalStatus,
+        });
+      } else {
+        store.addKnowledge({
+          title: title.trim(),
+          body: body.trim(),
+          topic,
+          source: source.trim() || "captured manually",
+        });
+      }
+      toast.success(`${meta.label} captured to your brain.`);
     }
-    reset();
+    if (editItem) onOpenChange(false);
+    else reset();
     onOpenChange(false);
   };
+
+  const isGoal = kind === "goal";
 
   return (
     <Modal
@@ -121,8 +197,12 @@ export function CaptureModal({
         if (!v) reset();
         onOpenChange(v);
       }}
-      title={`New ${meta.label}`}
-      subtitle={`$ neurobot capture --kind ${kind}`}
+      title={editItem ? `Edit ${meta.label}` : `New ${meta.label}`}
+      subtitle={
+        editItem
+          ? `$ neurobot edit --kind ${kind} --id ${editItem.id.slice(0, 6)}`
+          : `$ neurobot capture --kind ${kind}`
+      }
     >
       <form
         onSubmit={(e) => {
@@ -137,7 +217,11 @@ export function CaptureModal({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder={
-              kind === "idea" ? "What surfaced?" : kind === "knowledge" ? "e.g. Transformer architecture" : "Title..."
+              kind === "idea"
+                ? "What surfaced?"
+                : kind === "knowledge"
+                  ? "e.g. Transformer architecture"
+                  : "Title..."
             }
           />
         </Field>
@@ -151,7 +235,7 @@ export function CaptureModal({
           />
         </Field>
 
-        {kind !== "knowledge" && kind !== "goal" && (
+        {kind !== "knowledge" && !isGoal && (
           <Field label="Category">
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger>
@@ -211,10 +295,10 @@ export function CaptureModal({
           </Field>
         )}
 
-        {kind === "goal" && (
+        {isGoal && (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <Field label={`Progress: ${progress}%`}>
+              <Field label={`Progress — ${progress}%`}>
                 <input
                   type="range"
                   min={0}
@@ -263,6 +347,10 @@ export function CaptureModal({
             {saving ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" /> Saving...
+              </>
+            ) : editItem ? (
+              <>
+                <Save className="size-3.5" /> Save changes
               </>
             ) : (
               <>

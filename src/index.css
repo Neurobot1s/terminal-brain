@@ -283,3 +283,32 @@
     scrollbar-color: var(--border) transparent;
   }
 }
+
+/* Prefs-driven adjustments (data attributes set by PrefsProvider) */
+@layer base {
+  html[data-compact="on"] .card-lift {
+    padding-block: 0.75rem;
+  }
+  html[data-compact="on"] main {
+    gap: 0;
+  }
+  html[data-compact="on"] section,
+  html[data-compact="on"] [data-slot="card"] {
+    font-size: 0.95em;
+  }
+
+  /* Kill CSS animations when motion is off */
+  html[data-motion="off"] *,
+  html[data-motion="off"] *::before,
+  html[data-motion="off"] *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+
+  /* Hide the grid backdrop when disabled */
+  html[data-grid="off"] .term-grid,
+  html[data-grid="off"] .term-dots {
+    background-image: none;
+  }
+}

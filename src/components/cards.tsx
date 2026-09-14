@@ -1,8 +1,9 @@
 /**
  * Item cards: NoteCard, IdeaCard, GoalCard, KnowledgeCard + ActivityItem.
- * Shared card chrome with edit/delete micro-actions.
+ * Shared card chrome with pin / edit / delete micro-actions and undo toasts.
  */
-import { CalendarDays, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { CalendarDays, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Panel, KindChip, Chip } from "@/components/terminal";
 import {
@@ -17,12 +18,30 @@ import type { ActivityEntry, Goal, Idea, KnowledgeItem, Note } from "@/lib/store
 import { daysUntil, formatDate, formatDay, timeAgo } from "@/lib/store";
 
 function CardActions({
+  pinned,
+  onTogglePin,
   onEdit,
   onDelete,
+  kindLabel,
 }: {
+  pinned?: boolean;
+  onTogglePin?: () => void;
   onEdit?: () => void;
   onDelete: () => void;
+  kindLabel: string;
 }) {
+  const handleDelete = () => {
+    const undo = onDelete();
+    if (typeof undo === "function") {
+      toast(`${kindLabel} deleted.`, {
+        action: { label: "Undo", onClick: undo },
+        duration: 6000,
+      });
+      return;
+    }
+    toast(`${kindLabel} deleted.`);
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -35,19 +54,35 @@ function CardActions({
           <MoreHorizontal className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-36">
+      <DropdownMenuContent align="end" className="min-w-40">
+        {onTogglePin && (
+          <DropdownMenuItem onClick={onTogglePin}>
+            {pinned ? (
+              <>
+                <PinOff className="size-3.5" /> Unpin
+              </>
+            ) : (
+              <>
+                <Pin className="size-3.5" /> Pin to top
+              </>
+            )}
+          </DropdownMenuItem>
+        )}
         {onEdit && (
           <DropdownMenuItem onClick={onEdit}>
             <Pencil className="size-3.5" /> Edit
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
-          onClick={onDelete}
+          onClick={handleDelete}
           className="text-destructive focus:text-destructive"
         >
           <Trash2 className="size-3.5" /> Delete
+          <span className="ml-auto text-[10px] text-muted-foreground">undoable</span>
+          <span className="sr-only"> with toast</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
+      <span className="sr-only">{kindLabel} actions</span>
     </DropdownMenu>
   );
 }
@@ -55,12 +90,25 @@ function CardActions({
 function CardShell({
   children,
   className,
+  pinned,
 }: {
   children: React.ReactNode;
   className?: string;
+  pinned?: boolean;
 }) {
   return (
-    <Panel className={cn("card-lift flex flex-col p-4", className)}>
+    <Panel
+      className={cn(
+        "card-lift flex flex-col p-4",
+        pinned && "border-primary/50 bg-primary/[0.04]",
+        className,
+      )}
+    >
+      {pinned && (
+        <span className="absolute -top-2 right-3 rounded border border-primary/40 bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-primary shadow-sm">
+          pinned
+        </span>
+      )}
       {children}
     </Panel>
   );
@@ -70,16 +118,22 @@ export function NoteCard({
   note,
   onEdit,
   onDelete,
+  onTogglePin,
 }: {
   note: Note;
   onEdit?: (note: Note) => void;
-  onDelete: (note: Note) => void;
+  /** Return an undo callback when deletion is reversible. */
+  onDelete: (note: Note) => (() => void) | void;
+  onTogglePin?: (note: Note) => void;
 }) {
   return (
-    <CardShell>
+    <CardShell pinned={note.pinned} className="relative">
       <div className="flex items-start justify-between gap-2">
         <KindChip kind="note" />
         <CardActions
+          kindLabel="Note"
+          pinned={note.pinned}
+          onTogglePin={onTogglePin ? () => onTogglePin(note) : undefined}
           onEdit={onEdit ? () => onEdit(note) : undefined}
           onDelete={() => onDelete(note)}
         />
@@ -102,20 +156,23 @@ export function IdeaCard({
   idea,
   onEdit,
   onDelete,
+  onTogglePin,
 }: {
   idea: Idea;
   onEdit?: (idea: Idea) => void;
-  onDelete: (idea: Idea) => void;
+  onDelete: (idea: Idea) => (() => void) | void;
+  onTogglePin?: (idea: Idea) => void;
 }) {
-  const tone =
-    IDEA_STATUSES.find((s) => s.value === idea.status)?.tone ?? "gray";
-  const label =
-    IDEA_STATUSES.find((s) => s.value === idea.status)?.label ?? idea.status;
+  const tone = IDEA_STATUSES.find((s) => s.value === idea.status)?.tone ?? "gray";
+  const label = IDEA_STATUSES.find((s) => s.value === idea.status)?.label ?? idea.status;
   return (
-    <CardShell>
+    <CardShell pinned={idea.pinned} className="relative">
       <div className="flex items-start justify-between gap-2">
         <KindChip kind="idea" />
         <CardActions
+          kindLabel="Idea"
+          pinned={idea.pinned}
+          onTogglePin={onTogglePin ? () => onTogglePin(idea) : undefined}
           onEdit={onEdit ? () => onEdit(idea) : undefined}
           onDelete={() => onDelete(idea)}
         />
@@ -141,20 +198,25 @@ export function GoalCard({
   goal,
   onEdit,
   onDelete,
+  onTogglePin,
 }: {
   goal: Goal;
   onEdit?: (goal: Goal) => void;
-  onDelete: (goal: Goal) => void;
+  onDelete: (goal: Goal) => (() => void) | void;
+  onTogglePin?: (goal: Goal) => void;
 }) {
   const overdue =
     goal.status === "active" &&
     goal.progress < 100 &&
     daysUntil(goal.deadline) < 0;
   return (
-    <CardShell>
+    <CardShell pinned={goal.pinned} className="relative">
       <div className="flex items-start justify-between gap-2">
         <KindChip kind="goal" />
         <CardActions
+          kindLabel="Goal"
+          pinned={goal.pinned}
+          onTogglePin={onTogglePin ? () => onTogglePin(goal) : undefined}
           onEdit={onEdit ? () => onEdit(goal) : undefined}
           onDelete={() => onDelete(goal)}
         />
@@ -191,16 +253,21 @@ export function KnowledgeCard({
   item,
   onEdit,
   onDelete,
+  onTogglePin,
 }: {
   item: KnowledgeItem;
   onEdit?: (item: KnowledgeItem) => void;
-  onDelete: (item: KnowledgeItem) => void;
+  onDelete: (item: KnowledgeItem) => (() => void) | void;
+  onTogglePin?: (item: KnowledgeItem) => void;
 }) {
   return (
-    <CardShell>
+    <CardShell pinned={item.pinned} className="relative">
       <div className="flex items-start justify-between gap-2">
         <KindChip kind="knowledge" />
         <CardActions
+          kindLabel="Knowledge"
+          pinned={item.pinned}
+          onTogglePin={onTogglePin ? () => onTogglePin(item) : undefined}
           onEdit={onEdit ? () => onEdit(item) : undefined}
           onDelete={() => onDelete(item)}
         />
@@ -244,6 +311,7 @@ export function ActivityItem({
         )}
       >
         <Icon className="size-3" />
+        <span className="sr-only">{meta.label}</span>
       </span>
       <span className="min-w-0 flex-1 truncate text-xs">{entry.title}</span>
       <span className="shrink-0 text-[10px] text-muted-foreground">

@@ -1,25 +1,28 @@
 /**
- * TopBar — search/command trigger (⌘K), Live button, notifications, profile.
+ * TopBar — search/command trigger (⌘K), Live button, credits, notifications,
+ * profile. Global hotkeys: ⌘K palette, c n/i/k/g capture, ? shortcuts help.
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   Bell,
   CircleDot,
+  Command as CommandIcon,
+  Keyboard,
   Menu,
-  Search,
   Radio,
+  Search,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS } from "@/config/nav";
 import { useBrainStore } from "@/components/BrainProvider";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/Modal";
-import { SearchBar } from "@/components/SearchBar";
 import { LiveModal } from "@/components/LiveModal";
+import { CommandPalette } from "@/components/CommandPalette";
 import { Chip } from "@/components/terminal";
+import type { ItemKind } from "@/lib/store";
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -28,6 +31,16 @@ function Kbd({ children }: { children: React.ReactNode }) {
     </kbd>
   );
 }
+
+const SHORTCUTS: { keys: string[]; desc: string }[] = [
+  { keys: ["⌘", "K"], desc: "Open command palette" },
+  { keys: ["C", "N"], desc: "New note" },
+  { keys: ["C", "I"], desc: "New idea" },
+  { keys: ["C", "K"], desc: "Save a thought" },
+  { keys: ["C", "G"], desc: "Add a goal" },
+  { keys: ["?"], desc: "Show this help" },
+  { keys: ["Esc"], desc: "Close dialogs" },
+];
 
 export const TopBar = memo(function TopBar({
   onMenu,
@@ -39,52 +52,76 @@ export const TopBar = memo(function TopBar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const { notes, ideas, goals, knowledge, activity } = useBrainStore();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const navigate = useNavigate();
+  const { activity } = useBrainStore();
 
-  // ⌘K / Ctrl+K opens the command search.
+  const openPalette = useCallback(() => setSearchOpen(true), []);
+  const closeNotif = useCallback(() => setNotifOpen(false), []);
+
+  // Global hotkeys.
   useEffect(() => {
+    let seq = "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchOpen((v) => !v);
+        return;
       }
-      if (e.key === "Escape") setSearchOpen(false);
+      if (e.key === "Escape") {
+        setNotifOpen(false);
+        setHelpOpen(false);
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "?") {
+        setHelpOpen(true);
+        return;
+      }
+      if (e.key.toLowerCase() === "c") {
+        seq = "c";
+        clearTimeout(timer);
+        timer = setTimeout(() => (seq = ""), 1200);
+        return;
+      }
+      if (seq === "c") {
+        const map: Record<string, ItemKind> = {
+          n: "note",
+          i: "idea",
+          k: "knowledge",
+          g: "goal",
+        };
+        const kind = map[e.key.toLowerCase()];
+        seq = "";
+        if (kind) {
+          e.preventDefault();
+          // Navigate to the page with a fresh-capture hash signal.
+          const route: Record<ItemKind, string> = {
+            note: "/notes",
+            idea: "/ideas",
+            goal: "/goals",
+            knowledge: "/knowledge",
+          };
+          navigate(`${route[kind]}?capture=${kind}`);
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const pages = useMemo(
-    () =>
-      NAV_ITEMS.filter((n) =>
-        n.label.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [query],
-  );
-  const allItems = useMemo(() => {
-    const q = query.toLowerCase();
-    return [
-      ...notes.map((n) => ({ kind: "note" as const, title: n.title, id: n.id })),
-      ...ideas.map((i) => ({ kind: "idea" as const, title: i.title, id: i.id })),
-      ...goals.map((g) => ({ kind: "goal" as const, title: g.title, id: g.id })),
-      ...knowledge.map((k) => ({ kind: "knowledge" as const, title: k.title, id: k.id })),
-    ].filter((it) => it.title.toLowerCase().includes(q));
-  }, [notes, ideas, goals, knowledge, query]);
-
-  const kindRoute: Record<string, string> = {
-    note: "/notes",
-    idea: "/ideas",
-    goal: "/goals",
-    knowledge: "/knowledge",
-  };
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      clearTimeout(timer);
+    };
+  }, [navigate]);
 
   const recent = useMemo(() => activity.slice(0, 3), [activity]);
-
-  const closeSearch = useCallback(() => {
-    setSearchOpen(false);
-    setQuery("");
-  }, []);
 
   return (
     <>
@@ -97,9 +134,9 @@ export const TopBar = memo(function TopBar({
           <Menu className="size-4" />
         </button>
 
-        {/* Search trigger */}
+        {/* Command palette trigger */}
         <button
-          onClick={() => setSearchOpen(true)}
+          onClick={openPalette}
           className="press flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-input bg-card px-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 sm:max-w-sm"
         >
           <Search className="size-3.5 shrink-0" />
@@ -125,6 +162,27 @@ export const TopBar = memo(function TopBar({
             </span>
           </Button>
 
+          {/* Shortcuts help */}
+          <button
+            onClick={() => setHelpOpen(true)}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className="press hidden rounded p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground sm:block"
+          >
+            <Keyboard className="size-4" />
+          </button>
+
+          {/* Credits */}
+          <button
+            onClick={onOpenCredits}
+            aria-label="Credits — crafted by Tanishq Lalwani"
+            title="Credits — crafted by Tanishq Lalwani"
+            className="press hidden items-center gap-1.5 rounded border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-widest text-primary transition-colors hover:bg-primary/10 md:flex"
+          >
+            <Sparkles className="size-3" />
+            Credits
+          </button>
+
           {/* Notifications */}
           <div className="relative">
             <button
@@ -140,7 +198,7 @@ export const TopBar = memo(function TopBar({
             </button>
             {notifOpen && (
               <>
-                <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
+                <div className="fixed inset-0 z-30" onClick={closeNotif} />
                 <div className="absolute right-0 z-40 mt-2 w-72 rounded-lg border border-border bg-popover shadow-xl">
                   <div className="border-b border-border px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                     notifications
@@ -166,17 +224,6 @@ export const TopBar = memo(function TopBar({
             )}
           </div>
 
-          {/* Credits button — opens the crafted-by popup */}
-          <button
-            onClick={onOpenCredits}
-            aria-label="Credits — crafted by Tanishq Lalwani"
-            title="Credits — crafted by Tanishq Lalwani"
-            className="press hidden items-center gap-1.5 rounded border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-widest text-primary transition-colors hover:bg-primary/10 md:flex"
-          >
-            <Sparkles className="size-3" />
-            Credits
-          </button>
-
           {/* Profile avatar */}
           <Link
             to="/settings"
@@ -188,65 +235,36 @@ export const TopBar = memo(function TopBar({
         </div>
       </header>
 
-      {/* Command search modal */}
-      <Modal
+      {/* Command palette */}
+      <CommandPalette
         open={searchOpen}
-        onOpenChange={(v) => (v ? setSearchOpen(true) : closeSearch())}
-        title="Search"
-        subtitle="$ neurobot query --ui"
+        onOpenChange={setSearchOpen}
+        onOpenLive={() => setLiveOpen(true)}
+        onOpenCredits={onOpenCredits}
+      />
+
+      {/* Shortcuts help */}
+      <Modal
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        title="Keyboard shortcuts"
+        subtitle="$ neurobot keys --list"
       >
-        <SearchBar
-          value={query}
-          onChange={setQuery}
-          placeholder="Search pages, notes, ideas, goals, knowledge…"
-        />
-        <div className="mt-3 max-h-80 space-y-3 overflow-y-auto scrollbar-thin">
-          {pages.length > 0 && (
-            <div>
-              <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground/60">pages</p>
-              {pages.map((p) => {
-                const Icon: LucideIcon = p.icon;
-                return (
-                  <Link
-                    key={p.to}
-                    to={p.to}
-                    onClick={() => setSearchOpen(false)}
-                    className="flex items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-accent"
-                  >
-                    <Icon className="size-3.5 text-muted-foreground" />
-                    {p.label}
-                    <span className="ml-auto text-[10px] text-muted-foreground/60">{p.glyph}</span>
-                  </Link>
-                );
-              })}
+        <div className="divide-y divide-border/60">
+          {SHORTCUTS.map((s) => (
+            <div key={s.desc} className="flex items-center gap-3 py-2.5 text-sm">
+              <span className="flex items-center gap-1">
+                {s.keys.map((k) => (
+                  <Kbd key={k}>{k}</Kbd>
+                ))}
+              </span>
+              <span className="text-muted-foreground">{s.desc}</span>
             </div>
-          )}
-          {allItems.length > 0 && (
-            <div>
-              <p className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                memories
-              </p>
-              {allItems.slice(0, 8).map((it) => (
-                <Link
-                  key={`${it.kind}-${it.id}`}
-                  to={kindRoute[it.kind]}
-                  onClick={() => setSearchOpen(false)}
-                  className="flex items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-accent"
-                >
-                  <Chip tone="gray">{it.kind}</Chip>
-                  <span className="min-w-0 flex-1 truncate">{it.title}</span>
-                </Link>
-              ))}
-            </div>
-          )}
-          {pages.length === 0 && allItems.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              no matches for “{query}”
-            </p>
-          )}
+          ))}
         </div>
         <p className="mt-3 border-t border-border/60 pt-2 text-[10px] text-muted-foreground/70">
-          demo scope — search runs against locally captured data only
+          <CommandIcon className="mr-1 inline size-3" />
+          press keys sequentially — e.g. C then N for a new note
         </p>
       </Modal>
 

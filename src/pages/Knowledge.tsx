@@ -3,10 +3,14 @@
  * Education (+ any custom topics captured).
  */
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Share2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { KnowledgeCard } from "@/components/cards";
+import { CaptureModal } from "@/components/capture-forms";
 import { SearchBar } from "@/components/SearchBar";
 import { Panel, SectionHead, Chip } from "@/components/terminal";
+import { Button } from "@/components/ui/button";
 import { useBrainStore } from "@/components/BrainProvider";
 import { KNOWLEDGE_TOPICS } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -15,6 +19,12 @@ export default function Knowledge() {
   const store = useBrainStore();
   const [query, setQuery] = useState("");
   const [topic, setTopic] = useState<string>("all");
+  const [creating, setCreating] = useState(false);
+  const [params, setParams] = useSearchParams();
+
+  // Deep link: /knowledge?capture=knowledge opens the create modal (derived, no effect).
+  const deepLink = params.get("capture") === "knowledge";
+  const createOpen = creating || deepLink;
 
   const topics = useMemo(() => {
     const present = new Set(store.knowledge.map((k) => k.topic));
@@ -28,7 +38,10 @@ export default function Knowledge() {
       .filter((k) =>
         q ? (k.title + " " + k.body + " " + k.source).toLowerCase().includes(q) : true,
       )
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort(
+        (a, b) =>
+          Number(b.pinned ?? false) - Number(a.pinned ?? false) || b.createdAt - a.createdAt,
+      );
   }, [store.knowledge, query, topic]);
 
   const grouped = useMemo(() => {
@@ -47,6 +60,11 @@ export default function Knowledge() {
         sub="distilled concepts, grouped by topic"
         icon={Share2}
         count={store.knowledge.length}
+        right={
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="size-3.5" /> Save Thought
+          </Button>
+        }
       />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -113,15 +131,26 @@ export default function Knowledge() {
                   <div key={k.id} className="mb-3 break-inside-avoid">
                     <KnowledgeCard
                       item={k}
+                      onTogglePin={(item) => store.togglePin("knowledge", item.id)}
                       onDelete={(item) => store.removeKnowledge(item.id)}
                     />
                   </div>
                 ))}
               </div>
             </section>
-          ))}
+          )          )}
         </div>
       )}
+
+      <CaptureModal
+        kind="knowledge"
+        open={createOpen}
+        onOpenChange={(v) => {
+          if (deepLink) setParams({}, { replace: true });
+          setCreating(v);
+        }}
+        store={store}
+      />
     </div>
   );
 }

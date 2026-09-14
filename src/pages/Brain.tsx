@@ -34,6 +34,7 @@ export default function Brain() {
       title: string;
       body: string;
       createdAt: number;
+      pinned: boolean;
       render: React.ReactNode;
     }[] = [
       ...store.notes.map((n) => ({
@@ -42,9 +43,11 @@ export default function Brain() {
         title: n.title,
         body: n.body + " " + n.category,
         createdAt: n.createdAt,
+        pinned: n.pinned ?? false,
         render: (
           <NoteCard
             note={n}
+            onTogglePin={(note) => store.togglePin("note", note.id)}
             onDelete={(note) => store.removeNote(note.id)}
           />
         ),
@@ -55,8 +58,13 @@ export default function Brain() {
         title: i.title,
         body: i.body + " " + i.category,
         createdAt: i.createdAt,
+        pinned: i.pinned ?? false,
         render: (
-          <IdeaCard idea={i} onDelete={(idea) => store.removeIdea(idea.id)} />
+          <IdeaCard
+            idea={i}
+            onTogglePin={(idea) => store.togglePin("idea", idea.id)}
+            onDelete={(idea) => store.removeIdea(idea.id)}
+          />
         ),
       })),
       ...store.goals.map((g) => ({
@@ -65,8 +73,13 @@ export default function Brain() {
         title: g.title,
         body: g.body,
         createdAt: g.createdAt,
+        pinned: g.pinned ?? false,
         render: (
-          <GoalCard goal={g} onDelete={(goal) => store.removeGoal(goal.id)} />
+          <GoalCard
+            goal={g}
+            onTogglePin={(goal) => store.togglePin("goal", goal.id)}
+            onDelete={(goal) => store.removeGoal(goal.id)}
+          />
         ),
       })),
       ...store.knowledge.map((k) => ({
@@ -75,9 +88,11 @@ export default function Brain() {
         title: k.title,
         body: k.body + " " + k.topic + " " + k.source,
         createdAt: k.createdAt,
+        pinned: k.pinned ?? false,
         render: (
           <KnowledgeCard
             item={k}
+            onTogglePin={(item) => store.togglePin("knowledge", item.id)}
             onDelete={(item) => store.removeKnowledge(item.id)}
           />
         ),
@@ -88,7 +103,9 @@ export default function Brain() {
       .filter((it) =>
         q ? (it.title + " " + it.body).toLowerCase().includes(q) : true,
       )
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort(
+        (a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt - a.createdAt,
+      );
   }, [store, query, filter]);
 
   const counts: Record<Filter, number> = {

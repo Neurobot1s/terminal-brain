@@ -1,6 +1,7 @@
 /**
  * Settings — appearance, notifications, data, privacy and about NeuroBot.
- * All local-only; no backend exists in Phase 1.
+ * v2: appearance toggles are real (PrefsProvider), reset requires
+ * confirmation, and Clear all data wipes localStorage cleanly.
  */
 import { useState } from "react";
 import {
@@ -11,21 +12,29 @@ import {
   Info,
   RotateCcw,
   Settings as SettingsIcon,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Panel, SectionHead, CheckLine, Chip } from "@/components/terminal";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { APP_NAME, TAGLINE, OWNER_CREDIT, SESSION } from "@/config/nav";
 import { useBrainStore } from "@/components/BrainProvider";
+import { usePrefs } from "@/components/PrefsProvider";
 
 export default function Settings() {
   const store = useBrainStore();
-  const [appearance, setAppearance] = useState({
-    compact: false,
-    gridBg: true,
-    animations: true,
-  });
+  const { prefs, setPref } = usePrefs();
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmWipe, setConfirmWipe] = useState(false);
   const [notifications, setNotifications] = useState({
     digest: true,
     connections: true,
@@ -35,6 +44,12 @@ export default function Settings() {
     localOnly: true,
     telemetry: false,
   });
+
+  const total =
+    store.notes.length +
+    store.ideas.length +
+    store.goals.length +
+    store.knowledge.length;
 
   const exportData = () => {
     const data = {
@@ -66,7 +81,7 @@ export default function Settings() {
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Appearance */}
+        {/* Appearance — functional via PrefsProvider */}
         <Panel className="p-4">
           <div className="flex items-center gap-2">
             <Eye className="size-4 text-primary" />
@@ -75,26 +90,26 @@ export default function Settings() {
           </div>
           <div className="mt-2 divide-y divide-border/60">
             <CheckLine
-              checked={appearance.compact}
-              onChange={(v) => setAppearance((s) => ({ ...s, compact: v }))}
+              checked={prefs.compact}
+              onChange={(v) => setPref("compact", v)}
               label="Compact density"
               desc="Tighter paddings across cards and lists."
             />
             <CheckLine
-              checked={appearance.gridBg}
-              onChange={(v) => setAppearance((s) => ({ ...s, gridBg: v }))}
+              checked={prefs.grid}
+              onChange={(v) => setPref("grid", v)}
               label="Grid backdrop"
               desc="Subtle terminal grid behind the app."
             />
             <CheckLine
-              checked={appearance.animations}
-              onChange={(v) => setAppearance((s) => ({ ...s, animations: v }))}
+              checked={prefs.motion}
+              onChange={(v) => setPref("motion", v)}
               label="Motion"
               desc="Micro-interactions and graph animations."
             />
           </div>
           <p className="mt-2 text-[10px] text-muted-foreground/70">
-            Appearance preferences are visual-only in this prototype.
+            Saved to this device — applied instantly across the app.
           </p>
         </Panel>
 
@@ -103,6 +118,7 @@ export default function Settings() {
           <div className="flex items-center gap-2">
             <Bell className="size-4 text-primary" />
             <h3 className="text-sm font-semibold">Notifications</h3>
+            <Chip tone="amber" className="ml-auto">coming soon</Chip>
           </div>
           <div className="mt-2 divide-y divide-border/60">
             <CheckLine
@@ -124,6 +140,9 @@ export default function Settings() {
               desc="Deadline reminders for active goals."
             />
           </div>
+          <p className="mt-2 text-[10px] text-muted-foreground/70">
+            Preferences remembered; delivery arrives with Phase 2.
+          </p>
         </Panel>
 
         {/* Data */}
@@ -134,9 +153,8 @@ export default function Settings() {
             <Chip tone="amber" className="ml-auto">localStorage</Chip>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            {store.notes.length + store.ideas.length + store.goals.length + store.knowledge.length}{" "}
-            memories stored on this device. Export to keep a backup, or reset
-            to the original demo dataset.
+            {total} memories stored on this device. Export to keep a backup,
+            reset to the demo dataset, or wipe everything.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={exportData}>
@@ -145,13 +163,17 @@ export default function Settings() {
             <Button
               size="sm"
               variant="outline"
-              className="text-destructive hover:text-destructive"
-              onClick={() => {
-                store.resetDemo();
-                toast.success("Demo data reset.");
-              }}
+              onClick={() => setConfirmReset(true)}
             >
               <RotateCcw className="size-3.5" /> Reset demo data
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setConfirmWipe(true)}
+            >
+              <Trash2 className="size-3.5" /> Clear all
             </Button>
           </div>
         </Panel>
@@ -189,7 +211,7 @@ export default function Settings() {
         <Separator className="my-3" />
         <p className="text-sm leading-relaxed text-muted-foreground">
           {APP_NAME} — {TAGLINE} Capture, organize, connect and retrieve your
-          knowledge, ideas and goals. Phase 1 is a frontend prototype: all data
+          knowledge, ideas and goals. This is a frontend prototype: all data
           lives in your browser, no AI is wired up yet, and every feature is
           honestly labeled as demo or coming soon.
         </p>
@@ -197,6 +219,63 @@ export default function Settings() {
           {OWNER_CREDIT}
         </p>
       </Panel>
+
+      {/* Confirm: reset to demo dataset */}
+      <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset to demo data?</DialogTitle>
+            <DialogDescription>
+              This replaces everything you've captured with the original demo
+              dataset. Export a backup first if you want to keep it.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmReset(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                store.resetDemo();
+                setConfirmReset(false);
+                toast.success("Demo data reset.");
+              }}
+            >
+              <RotateCcw className="size-3.5" /> Reset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm: wipe everything */}
+      <Dialog open={confirmWipe} onOpenChange={setConfirmWipe}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear all data?</DialogTitle>
+            <DialogDescription>
+              Permanently deletes every note, idea, goal and knowledge item
+              from this browser. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConfirmWipe(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                store.clearAll();
+                setConfirmWipe(false);
+                toast.success("All data cleared — a blank brain awaits.");
+              }}
+            >
+              <Trash2 className="size-3.5" /> Delete everything
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

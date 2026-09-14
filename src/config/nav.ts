@@ -33,4 +33,4 @@ export const NAV_ITEMS: NavItem[] = [
 export const APP_NAME = "NeuroBot";
 export const TAGLINE = "Your Second Brain.";
 export const OWNER_CREDIT = "Crafted by TANISHQ LALWANI";
-export const SESSION = "v1.0 · prototype";
+export const SESSION = "v2.0 · prototype";

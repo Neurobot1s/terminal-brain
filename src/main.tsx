@@ -5,6 +5,7 @@ import React, { StrictMode, memo } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import "./index.css";
+import { PrefsProvider } from "@/components/PrefsProvider";
 
 // Eager static imports — lazy route chunks caused a visible compile/parse
 // delay on first navigation in dev (the "laggy tab switch"). The app is one
@@ -111,21 +112,23 @@ createRoot(document.getElementById("root")!).render(
       </ToolbarErrorBoundary>
       {/* Phase 1: no auth — the whole app is the prototype */}
       <BrowserRouter>
-        <MemoRouteSyncer />
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/brain" element={<Brain />} />
-            <Route path="/notes" element={<Notes />} />
-            <Route path="/ideas" element={<Ideas />} />
-            <Route path="/knowledge" element={<Knowledge />} />
-            <Route path="/goals" element={<Goals />} />
-            <Route path="/connections" element={<Connections />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
-          </Route>
-        </Routes>
-        <Toaster />
+        <PrefsProvider>
+          <MemoRouteSyncer />
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/brain" element={<Brain />} />
+              <Route path="/notes" element={<Notes />} />
+              <Route path="/ideas" element={<Ideas />} />
+              <Route path="/knowledge" element={<Knowledge />} />
+              <Route path="/goals" element={<Goals />} />
+              <Route path="/connections" element={<Connections />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
+          <Toaster />
+        </PrefsProvider>
       </BrowserRouter>
     </RootErrorBoundary>
   </StrictMode>,

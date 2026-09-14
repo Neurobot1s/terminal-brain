@@ -1,23 +1,14 @@
 /**
- * Ideas — attractive board grouped by status: New → Exploring → Building →
- * Completed. Cards can be promoted, edited or deleted.
+ * Ideas — board grouped by status: New → Exploring → Building → Completed.
+ * v2: universal CaptureModal, pin + undo, `?capture=idea` deep link.
  */
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { ArrowRight, Lightbulb, Plus } from "lucide-react";
-import { Modal } from "@/components/Modal";
 import { IdeaCard } from "@/components/cards";
+import { CaptureModal } from "@/components/capture-forms";
 import { SectionHead, Chip } from "@/components/terminal";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { IDEA_STATUSES } from "@/config/kinds";
 import { useBrainStore } from "@/components/BrainProvider";
 import type { Idea, IdeaStatus } from "@/lib/store";
@@ -29,19 +20,15 @@ const NEXT_STATUS: Record<IdeaStatus, IdeaStatus> = {
   completed: "new",
 };
 
-const CATEGORIES = [
-  "General",
-  "AI",
-  "Engineering",
-  "Product",
-  "Business",
-  "Learning",
-];
-
 export default function Ideas() {
   const store = useBrainStore();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Idea | null>(null);
+  const [params, setParams] = useSearchParams();
+
+  // Deep link: /ideas?capture=idea opens the create modal (derived, no effect).
+  const deepLink = params.get("capture") === "idea";
+  const createOpen = creating || deepLink;
 
   const byStatus = useMemo(() => {
     const map: Record<IdeaStatus, Idea[]> = {
@@ -52,7 +39,10 @@ export default function Ideas() {
     };
     for (const idea of store.ideas) map[idea.status].push(idea);
     for (const key of Object.keys(map) as IdeaStatus[])
-      map[key].sort((a, b) => b.createdAt - a.createdAt);
+      map[key].sort(
+        (a, b) =>
+          Number(b.pinned ?? false) - Number(a.pinned ?? false) || b.createdAt - a.createdAt,
+      );
     return map;
   }, [store.ideas]);
 
@@ -99,6 +89,7 @@ export default function Ideas() {
                     <IdeaCard
                       idea={idea}
                       onEdit={setEditing}
+                      onTogglePin={(i) => store.togglePin("idea", i.id)}
                       onDelete={(i) => store.removeIdea(i.id)}
                     />
                     <button
@@ -118,126 +109,22 @@ export default function Ideas() {
         })}
       </div>
 
-      <IdeaEditor
-        open={creating}
-        onOpenChange={setCreating}
-        onSubmit={(values) => store.addIdea(values)}
-      />
-      {editing && (
-        <IdeaEditor
-          open
-          onOpenChange={(v) => !v && setEditing(null)}
-          initial={editing}
-          onSubmit={(values) => store.updateIdea(editing.id, values)}
-        />
-      )}
-    </div>
-  );
-}
-
-function IdeaEditor({
-  open,
-  onOpenChange,
-  initial,
-  onSubmit,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  initial?: Idea;
-  onSubmit: (values: {
-    title: string;
-    body: string;
-    category: string;
-    status: IdeaStatus;
-  }) => void;
-}) {
-  const [title, setTitle] = useState(initial?.title ?? "");
-  const [body, setBody] = useState(initial?.body ?? "");
-  const [category, setCategory] = useState(initial?.category ?? "Product");
-  const [status, setStatus] = useState<IdeaStatus>(initial?.status ?? "new");
-
-  const submit = () => {
-    if (!title.trim()) return;
-    onSubmit({ title: title.trim(), body: body.trim(), category, status });
-    onOpenChange(false);
-  };
-
-  return (
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      title={initial ? "Edit idea" : "New idea"}
-      subtitle={initial ? "$ vim idea.md" : "$ touch idea.md"}
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
+      <CaptureModal
+        kind="idea"
+        open={createOpen}
+        onOpenChange={(v) => {
+          if (deepLink) setParams({}, { replace: true });
+          setCreating(v);
         }}
-        className="grid gap-3"
-      >
-        <div className="grid gap-1.5">
-          <Label className="text-xs text-muted-foreground">Title</Label>
-          <Input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="What surfaced?"
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label className="text-xs text-muted-foreground">Description</Label>
-          <Textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Describe the idea — what makes it interesting?"
-            rows={4}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Category</Label>
-            <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CATEGORIES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1.5">
-            <Label className="text-xs text-muted-foreground">Status</Label>
-            <Select
-              value={status}
-              onValueChange={(v) => setStatus(v as IdeaStatus)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {IDEA_STATUSES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="mt-1 flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" size="sm" disabled={!title.trim()}>
-            {initial ? "Save changes" : "Log idea"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+        store={store}
+      />
+      <CaptureModal
+        kind="idea"
+        open={editing !== null}
+        onOpenChange={(v) => !v && setEditing(null)}
+        store={store}
+        editItem={editing ?? undefined}
+      />
+    </div>
   );
 }

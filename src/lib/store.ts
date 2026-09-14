@@ -1,6 +1,9 @@
 /**
- * localStorage-backed demo store for NeuroBot (no backend, no AI — Phase 1).
+ * localStorage-backed demo store for NeuroBot (no backend, no AI — Phase 1/2).
  * Seeds realistic demo data on first launch; persists user edits.
+ *
+ * v2: pin support on every item, capture-streak + activity helpers, and a
+ * migration-safe store loader (v1 data upgrades in place, preserving keys).
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -15,6 +18,7 @@ export interface Note {
   body: string;
   category: string;
   createdAt: number;
+  pinned?: boolean;
 }
 
 export interface Idea {
@@ -25,6 +29,7 @@ export interface Idea {
   category: string;
   status: IdeaStatus;
   createdAt: number;
+  pinned?: boolean;
 }
 
 export interface Goal {
@@ -36,6 +41,7 @@ export interface Goal {
   deadline: string; // ISO date
   status: GoalStatus;
   createdAt: number;
+  pinned?: boolean;
 }
 
 export interface KnowledgeItem {
@@ -46,6 +52,7 @@ export interface KnowledgeItem {
   topic: string;
   source: string;
   createdAt: number;
+  pinned?: boolean;
 }
 
 export type BrainItem = Note | Idea | Goal | KnowledgeItem;
@@ -94,6 +101,7 @@ function seed(): Store {
       body: "Self-attention lets every token attend to every other token. Multi-head = parallel subspaces. Positional encoding injects order. One idea reshaped NLP.",
       category: "AI",
       createdAt: min(24),
+      pinned: true,
     },
     {
       id: uid(),
@@ -130,6 +138,7 @@ function seed(): Store {
       category: "Learning",
       status: "exploring",
       createdAt: min(90),
+      pinned: true,
     },
     {
       id: uid(),
@@ -170,6 +179,7 @@ function seed(): Store {
       deadline: "2026-11-30",
       status: "active",
       createdAt: day(12),
+      pinned: true,
     },
     {
       id: uid(),
@@ -212,6 +222,7 @@ function seed(): Store {
       topic: "AI",
       source: "arXiv 1706.03762",
       createdAt: day(4),
+      pinned: true,
     },
     {
       id: uid(),
@@ -284,6 +295,9 @@ function seed(): Store {
     { id: uid(), kind: "note", title: "Note edited: Latency budget for v1", createdAt: hour(5) },
     { id: uid(), kind: "knowledge", title: "Knowledge captured: Transformer architecture", createdAt: day(4) },
     { id: uid(), kind: "goal", title: "Goal updated: Prototype the connection engine", createdAt: day(6) },
+    { id: uid(), kind: "note", title: "Note captured: Design partner call — notes", createdAt: day(2) },
+    { id: uid(), kind: "idea", title: "Idea logged: Local-first sync engine", createdAt: day(3) },
+    { id: uid(), kind: "note", title: "Note captured: Questions after 'Thinking, Fast and Slow'", createdAt: day(1) },
   ];
 
   return { notes, ideas, goals, knowledge, activity };
@@ -293,7 +307,7 @@ function load(): Store {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Store;
+      const parsed = JSON.parse(raw) as Partial<Store>;
       if (
         Array.isArray(parsed.notes) &&
         Array.isArray(parsed.ideas) &&
@@ -301,7 +315,13 @@ function load(): Store {
         Array.isArray(parsed.knowledge) &&
         Array.isArray(parsed.activity)
       ) {
-        return parsed;
+        return {
+          notes: parsed.notes,
+          ideas: parsed.ideas,
+          goals: parsed.goals,
+          knowledge: parsed.knowledge,
+          activity: parsed.activity,
+        };
       }
     }
   } catch {
@@ -356,8 +376,19 @@ export function useBrain() {
     }));
   }, []);
 
+  /** Remove a note; returns an undo callback that restores it in place. */
   const removeNote = useCallback((id: string) => {
-    setStore((s) => ({ ...s, notes: s.notes.filter((n) => n.id !== id) }));
+    let removed: Note | undefined;
+    setStore((s) => {
+      removed = s.notes.find((n) => n.id === id);
+      return { ...s, notes: s.notes.filter((n) => n.id !== id) };
+    });
+    return () => {
+      setStore((s) => {
+        if (!removed || s.notes.some((n) => n.id === removed!.id)) return s;
+        return { ...s, notes: [removed, ...s.notes] };
+      });
+    };
   }, []);
 
   const addIdea = useCallback((idea: Omit<Idea, "id" | "kind" | "createdAt">) => {
@@ -385,8 +416,19 @@ export function useBrain() {
     }));
   }, []);
 
+  /** Remove an idea; returns an undo callback that restores it in place. */
   const removeIdea = useCallback((id: string) => {
-    setStore((s) => ({ ...s, ideas: s.ideas.filter((i) => i.id !== id) }));
+    let removed: Idea | undefined;
+    setStore((s) => {
+      removed = s.ideas.find((i) => i.id === id);
+      return { ...s, ideas: s.ideas.filter((i) => i.id !== id) };
+    });
+    return () => {
+      setStore((s) => {
+        if (!removed || s.ideas.some((i) => i.id === removed!.id)) return s;
+        return { ...s, ideas: [removed, ...s.ideas] };
+      });
+    };
   }, []);
 
   const addGoal = useCallback((goal: Omit<Goal, "id" | "kind" | "createdAt">) => {
@@ -414,8 +456,19 @@ export function useBrain() {
     }));
   }, []);
 
+  /** Remove a goal; returns an undo callback that restores it in place. */
   const removeGoal = useCallback((id: string) => {
-    setStore((s) => ({ ...s, goals: s.goals.filter((g) => g.id !== id) }));
+    let removed: Goal | undefined;
+    setStore((s) => {
+      removed = s.goals.find((g) => g.id === id);
+      return { ...s, goals: s.goals.filter((g) => g.id !== id) };
+    });
+    return () => {
+      setStore((s) => {
+        if (!removed || s.goals.some((g) => g.id === removed!.id)) return s;
+        return { ...s, goals: [removed, ...s.goals] };
+      });
+    };
   }, []);
 
   const addKnowledge = useCallback(
@@ -449,16 +502,51 @@ export function useBrain() {
     [],
   );
 
+  /** Remove a knowledge item; returns an undo callback restoring it in place. */
   const removeKnowledge = useCallback((id: string) => {
-    setStore((s) => ({ ...s, knowledge: s.knowledge.filter((k) => k.id !== id) }));
+    let removed: KnowledgeItem | undefined;
+    setStore((s) => {
+      removed = s.knowledge.find((k) => k.id === id);
+      return { ...s, knowledge: s.knowledge.filter((k) => k.id !== id) };
+    });
+    return () => {
+      setStore((s) => {
+        if (!removed || s.knowledge.some((k) => k.id === removed!.id)) return s;
+        return { ...s, knowledge: [removed, ...s.knowledge] };
+      });
+    };
   }, []);
 
   const removeActivity = useCallback((id: string) => {
     setStore((s) => ({ ...s, activity: s.activity.filter((a) => a.id !== id) }));
   }, []);
 
+  /** Toggle the pin flag on any item kind. */
+  const togglePin = useCallback((kind: ItemKind, id: string) => {
+    setStore((s) => {
+      if (kind === "note") {
+        return { ...s, notes: s.notes.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n)) };
+      }
+      if (kind === "idea") {
+        return { ...s, ideas: s.ideas.map((i) => (i.id === id ? { ...i, pinned: !i.pinned } : i)) };
+      }
+      if (kind === "goal") {
+        return { ...s, goals: s.goals.map((g) => (g.id === id ? { ...g, pinned: !g.pinned } : g)) };
+      }
+      return {
+        ...s,
+        knowledge: s.knowledge.map((k) => (k.id === id ? { ...k, pinned: !k.pinned } : k)),
+      };
+    });
+  }, []);
+
   const resetDemo = useCallback(() => {
     setStore(seed());
+  }, []);
+
+  /** Wipe every memory — the app starts from a truly blank brain. */
+  const clearAll = useCallback(() => {
+    setStore({ notes: [], ideas: [], goals: [], knowledge: [], activity: [] });
   }, []);
 
   return {
@@ -476,11 +564,17 @@ export function useBrain() {
     updateKnowledge,
     removeKnowledge,
     removeActivity,
+    togglePin,
     resetDemo,
+    clearAll,
   };
 }
 
 export type BrainStore = ReturnType<typeof useBrain>;
+
+/* ---------------------------------- */
+/* Derived helpers (pure, render-safe) */
+/* ---------------------------------- */
 
 export function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -519,4 +613,74 @@ export function formatDateTime(ts: number): string {
 export function daysUntil(iso: string): number {
   const d = new Date(iso + "T00:00:00").getTime();
   return Math.ceil((d - Date.now()) / 86_400_000);
+}
+
+/** Local-date key like 2026-09-14 for an epoch timestamp. */
+function dayKey(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+export interface BrainStats {
+  total: number;
+  pinned: number;
+  /** Consecutive days (ending today or yesterday) with ≥1 capture. */
+  streak: number;
+  /** Capture counts for the last 14 days, oldest → newest. */
+  sparkline: number[];
+  /** Sum of capture counts across the 14-day window. */
+  monthTotal: number;
+}
+
+export function computeStats(store: {
+  notes: Note[];
+  ideas: Idea[];
+  goals: Goal[];
+  knowledge: KnowledgeItem[];
+  activity: ActivityEntry[];
+}): BrainStats {
+  const all: { createdAt: number }[] = [
+    ...store.notes,
+    ...store.ideas,
+    ...store.goals,
+    ...store.knowledge,
+  ];
+  const pinned =
+    store.notes.filter((n) => n.pinned).length +
+    store.ideas.filter((i) => i.pinned).length +
+    store.goals.filter((g) => g.pinned).length +
+    store.knowledge.filter((k) => k.pinned).length;
+
+  const today = dayKey(Date.now());
+  const days: string[] = [];
+  for (let i = 13; i >= 0; i--) {
+    days.push(dayKey(Date.now() - i * 86_400_000));
+  }
+  const counts = new Map<string, number>();
+  for (const item of all) {
+    const key = dayKey(item.createdAt);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const sparkline = days.map((d) => counts.get(d) ?? 0);
+
+  // Streak: walk back from today; allow "started yesterday" grace.
+  let streak = 0;
+  if ((counts.get(today) ?? 0) > 0 || (counts.get(days[12]) ?? 0) > 0) {
+    const startIdx = (counts.get(today) ?? 0) > 0 ? 13 : 12;
+    streak = 0;
+    for (let i = startIdx; i >= 0; i--) {
+      if ((counts.get(days[i]) ?? 0) > 0) streak++;
+      else break;
+    }
+  }
+
+  return {
+    total: all.length,
+    pinned,
+    streak,
+    sparkline,
+    monthTotal: sparkline.reduce((a, b) => a + b, 0),
+  };
 }
