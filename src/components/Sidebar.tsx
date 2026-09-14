@@ -1,5 +1,6 @@
 /**
  * Sidebar — collapsible terminal nav. On mobile it becomes an overlay drawer.
+ * Memoized: only re-renders when collapse/drawer state, route or data changes.
  */
 import { memo, useCallback } from "react";
 import { Link, useLocation } from "react-router";
@@ -13,17 +14,19 @@ const Sidebar = memo(function Sidebar({
   onToggle,
   mobileOpen,
   onMobileClose,
+  onOpenCredits,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
+  onOpenCredits: () => void;
 }) {
   const { pathname } = useLocation();
   const { notes, ideas, goals, knowledge } = useBrainStore();
   const total = notes.length + ideas.length + goals.length + knowledge.length;
-
   const closeMobile = useCallback(() => onMobileClose(), [onMobileClose]);
+  const health = Math.min(98, 72 + total);
 
   const content = (
     <div className="flex h-full flex-col">
@@ -69,7 +72,7 @@ const Sidebar = memo(function Sidebar({
             <Link
               key={to}
               to={to}
-              onClick={onMobileClose}
+              onClick={closeMobile}
               title={collapsed ? label : undefined}
               className={cn(
                 "group mb-0.5 flex items-center gap-2.5 rounded px-2.5 py-2 text-sm transition-colors",
@@ -108,13 +111,13 @@ const Sidebar = memo(function Sidebar({
                 Brain Health
               </span>
               <span className="ml-auto text-xs font-semibold text-primary">
-                {Math.min(98, 72 + total)}
+                {health}
               </span>
             </div>
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-border">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-700"
-                style={{ width: `${Math.min(98, 72 + total)}%` }}
+                style={{ width: `${health}%` }}
               />
             </div>
             <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
@@ -124,7 +127,7 @@ const Sidebar = memo(function Sidebar({
         ) : (
           <div
             className="mx-auto grid size-8 place-items-center rounded border border-primary/40 bg-primary/10 text-primary"
-            title={`Brain Health ${Math.min(98, 72 + total)}`}
+            title={`Brain Health ${health}`}
           >
             <span className="relative flex size-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
@@ -147,9 +150,13 @@ const Sidebar = memo(function Sidebar({
         </div>
 
         {!collapsed && (
-          <p className="mt-3 hidden truncate text-center text-[9px] uppercase tracking-widest text-muted-foreground/50 xl:block">
+          <button
+            onClick={onOpenCredits}
+            title="Open credits"
+            className="press mt-3 hidden w-full truncate rounded text-center text-[9px] uppercase tracking-widest text-muted-foreground/50 transition-colors hover:text-primary xl:block"
+          >
             {OWNER_CREDIT}
-          </p>
+          </button>
         )}
         <button
           onClick={onToggle}
@@ -179,7 +186,7 @@ const Sidebar = memo(function Sidebar({
         <div
           onClick={onMobileClose}
           className={cn(
-            "absolute inset-0 bg-foreground/20 backdrop-blur-[2px] transition-opacity duration-300",
+            "absolute inset-0 bg-foreground/20 transition-opacity duration-200",
             mobileOpen ? "opacity-100" : "opacity-0",
           )}
         />
@@ -194,4 +201,6 @@ const Sidebar = memo(function Sidebar({
       </div>
     </>
   );
-}
+});
+
+export { Sidebar };

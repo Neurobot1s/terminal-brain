@@ -2,9 +2,12 @@
  * NeuralGraph — interactive knowledge-graph visualization.
  * Phase 1: hand-authored demo layout. Hover a node to see its topic; edges
  * are decorative, not AI-generated.
+ *
+ * Perf notes: no framer-motion here — hovers are CSS transitions and the
+ * wandering pulse is native SMIL animateMotion, so the graph costs nothing
+ * when idle.
  */
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import type { GraphEdge, GraphNode } from "@/config/graph-data";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +29,7 @@ const TOPIC_SOFT: Record<GraphNode["topic"], string> = {
 
 const BASE_R = { small: 7, large: 10 };
 
-// Hand-authored layout in 0..1 relative coords (module-scope: stable across renders).
+// Hand-authored layout in 0..1 relative coords (module scope: stable ref).
 const LAYOUT: Record<string, { x: number; y: number }> = {
   ai: { x: 0.5, y: 0.3 },
   ml: { x: 0.28, y: 0.52 },
@@ -111,17 +114,6 @@ export function NeuralGraph({
     [curves, hovered],
   );
 
-  // Wandering pulse particle along the ai→neurobot hero edge.
-  const pulse = useMemo(() => {
-    const e = curves.find((c) => c.key === "ai-neurobot");
-    const a = byId["ai"];
-    const b = byId["neurobot"];
-    if (!e || !a || !b) return null;
-    const parts = e.d.split("Q ")[1].trim().split(/\s+/);
-    const c = { x: parseFloat(parts[0]), y: parseFloat(parts[1]) };
-    return { p0: { x: a.cx, y: a.cy }, c, p2: { x: b.cx, y: b.cy } };
-  }, [curves, byId]);
-
   return (
     <div className={cn("relative", className)}>
       <svg
@@ -135,34 +127,45 @@ export function NeuralGraph({
           const isActive = activeEdges.has(c.key);
           const dim = hovered !== null && !isActive;
           return (
-            <motion.path
+            <path
               key={c.key}
+              id={`edge-${c.key}`}
               d={c.d}
               fill="none"
               stroke={dim ? "var(--border)" : "var(--primary)"}
               strokeOpacity={dim ? 0.55 : isActive ? 0.8 : 0.3}
               strokeWidth={isActive ? 1.7 : 1.1}
               className={isActive ? "edge-flow" : undefined}
+              style={{
+                transition:
+                  "stroke .2s ease, stroke-opacity .2s ease, stroke-width .2s ease",
+              }}
             />
           );
         })}
 
-        {/* wandering pulse particle on the hero edge */}
-        {pulse && (
-          <motion.circle
-            r={3.2}
-            fill="var(--primary)"
-            cx={pulse.p0.x}
-            cy={pulse.p0.y}
-            initial={{ opacity: 0 }}
-            animate={{
-              cx: [pulse.p0.x, pulse.c.x, pulse.p2.x],
-              cy: [pulse.p0.y, pulse.c.y, pulse.p2.y],
-              opacity: [0, 1, 0],
-            }}
-            transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
+        {/* wandering pulse particle on the hero edge (native SMIL — no JS) */}
+        <circle r={3.2} fill="var(--primary)">
+          <animateMotion
+            dur="3.4s"
+            begin="1.2s"
+            repeatCount="indefinite"
+            keyPoints="0;1"
+            keyTimes="0;1"
+            calcMode="spline"
+            keySplines="0.42 0 0.58 1"
+          >
+            <mpath href="#edge-ai-neurobot" />
+          </animateMotion>
+          <animate
+            attributeName="opacity"
+            values="0;1;1;0"
+            keyTimes="0;0.1;0.9;1"
+            dur="3.4s"
+            begin="1.2s"
+            repeatCount="indefinite"
           />
-        )}
+        </circle>
 
         {/* nodes */}
         {positioned.map((n) => {
@@ -178,7 +181,7 @@ export function NeuralGraph({
               onMouseLeave={() => setHovered(null)}
               onClick={() => onNodeClick?.(n)}
               opacity={dim ? 0.35 : 1}
-              style={{ transition: "opacity .2s" }}
+              style={{ transition: "opacity .2s ease" }}
             >
               <circle
                 cx={n.cx}
@@ -187,7 +190,7 @@ export function NeuralGraph({
                 fill={TOPIC_SOFT[n.topic]}
                 stroke={TOPIC_COLORS[n.topic]}
                 strokeWidth={1.5}
-                style={{ transition: "all .2s" }}
+                style={{ transition: "all .2s ease" }}
               />
               <circle cx={n.cx} cy={n.cy} r={3} fill={TOPIC_COLORS[n.topic]} />
               <text
@@ -198,7 +201,7 @@ export function NeuralGraph({
                 fontSize={variant === "page" ? 12 : 11}
                 fontWeight={600}
                 opacity={dim ? 0.4 : 1}
-                style={{ transition: "opacity .2s" }}
+                style={{ transition: "opacity .2s ease" }}
               >
                 {n.label}
               </text>

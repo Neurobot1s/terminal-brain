@@ -9,6 +9,7 @@ import {
   Menu,
   Search,
   Radio,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,13 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const TopBar = memo(function TopBar({ onMenu }: { onMenu: () => void }) {
+export const TopBar = memo(function TopBar({
+  onMenu,
+  onOpenCredits,
+}: {
+  onMenu: () => void;
+  onOpenCredits: () => void;
+}) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -158,6 +165,17 @@ export const TopBar = memo(function TopBar({ onMenu }: { onMenu: () => void }) {
               </>
             )}
           </div>
+
+          {/* Credits button — opens the crafted-by popup */}
+          <button
+            onClick={onOpenCredits}
+            aria-label="Credits — crafted by Tanishq Lalwani"
+            title="Credits — crafted by Tanishq Lalwani"
+            className="press hidden items-center gap-1.5 rounded border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-widest text-primary transition-colors hover:bg-primary/10 md:flex"
+          >
+            <Sparkles className="size-3" />
+            Credits
+          </button>
 
           {/* Profile avatar */}
           <Link
