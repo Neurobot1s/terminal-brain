@@ -26,6 +26,20 @@ const TOPIC_SOFT: Record<GraphNode["topic"], string> = {
 
 const BASE_R = { small: 7, large: 10 };
 
+// Hand-authored layout in 0..1 relative coords (module-scope: stable across renders).
+const LAYOUT: Record<string, { x: number; y: number }> = {
+  ai: { x: 0.5, y: 0.3 },
+  ml: { x: 0.28, y: 0.52 },
+  llm: { x: 0.74, y: 0.18 },
+  prog: { x: 0.5, y: 0.72 },
+  neurobot: { x: 0.79, y: 0.5 },
+  founder: { x: 0.93, y: 0.78 },
+  edu: { x: 0.24, y: 0.9 },
+  zettel: { x: 0.09, y: 0.66 },
+  crdt: { x: 0.87, y: 0.9 },
+  product: { x: 0.64, y: 0.88 },
+};
+
 interface Props {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -45,20 +59,6 @@ export function NeuralGraph({
   const W = variant === "card" ? 640 : 960;
   const H = variant === "card" ? 420 : 560;
   const scale = variant === "page" ? 1.35 : 1;
-
-  // Hand-authored layout in 0..1 relative coords.
-  const LAYOUT: Record<string, { x: number; y: number }> = {
-    ai: { x: 0.5, y: 0.3 },
-    ml: { x: 0.28, y: 0.52 },
-    llm: { x: 0.74, y: 0.18 },
-    prog: { x: 0.5, y: 0.72 },
-    neurobot: { x: 0.79, y: 0.5 },
-    founder: { x: 0.93, y: 0.78 },
-    edu: { x: 0.24, y: 0.9 },
-    zettel: { x: 0.09, y: 0.66 },
-    crdt: { x: 0.87, y: 0.9 },
-    product: { x: 0.64, y: 0.88 },
-  };
 
   const positioned = useMemo(
     () =>

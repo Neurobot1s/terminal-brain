@@ -75,7 +75,7 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
           aria-label="Open menu"
           className="press rounded p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground lg:hidden"
         >
-          <Menu className="size-4.5" />
+          <Menu className="size-4" />
         </button>
 
         {/* Search trigger */}
