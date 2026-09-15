@@ -66,7 +66,7 @@
         '<input type="file" id="set-import-file" accept=".json,application/json" style="display:none" />' +
       "</section>" +
       '<section class="panel"><h3>Privacy</h3>' +
-        '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends the selected memories to Google Gemini.</p>' +
+        '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends your memories to the AI model through this site\'s own server.</p>' +
       "</section>" +
       '<section class="panel"><h3>About NeuroBot</h3>' +
         '<p class="muted">NeuroBot — Your Second Brain.</p>' +
@@ -88,7 +88,7 @@
     });
     $("#ai-key-test", root).addEventListener("click", function () {
       var out = $("#ai-test-out", root);
-      out.textContent = "$ gemini --test … pinging Gemini…";
+      out.textContent = "$ ai --test … pinging the model…";
       out.className = "ai-test-out pending";
       NB.testGemini().then(function (r) {
         out.textContent = (r.ok ? "✓ " : "⚠ ") + r.message;

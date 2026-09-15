@@ -166,5 +166,13 @@
     $: $, $$: $$, el: el, esc: esc, uid: uid,
     timeAgo: timeAgo, formatDate: formatDate, daysUntil: daysUntil,
     getStore: getStore, setStore: setStore, onStoreChange: onStoreChange,
+    debounce: function (fn, ms) {
+      var t = null;
+      return function () {
+        var args = arguments, self = this;
+        if (t) clearTimeout(t);
+        t = setTimeout(function () { t = null; fn.apply(self, args); }, ms || 150);
+      };
+    },
   };
 })();

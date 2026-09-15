@@ -91,7 +91,7 @@
       { id: "idea", label: "New Idea", ico: "✦", run: function () { NB.openCapture("idea"); } },
       { id: "goal", label: "New Goal", ico: "◎", run: function () { NB.openCapture("goal"); } },
       { id: "knowledge", label: "Save Thought", ico: "◈", run: function () { NB.openCapture("knowledge"); } },
-      { id: "ask", label: "Ask your brain (Gemini)", ico: "✦", run: function () { if (NB.openAskModal) NB.openAskModal(); } },
+      { id: "ask", label: "Ask your brain (AI)", ico: "✦", run: function () { if (NB.openAskModal) NB.openAskModal(); } },
       { id: "live", label: "NeuroBot Live", ico: "◉", run: function () { if (NB.openLive) NB.openLive(); } },
       { id: "export", label: "Export brain (JSON)", ico: "⇩", run: function () { if (NB.exportJSON) NB.exportJSON(); } },
       { id: "shortcuts", label: "Keyboard shortcuts", ico: "⌘", run: function () { openShortcuts(); } },

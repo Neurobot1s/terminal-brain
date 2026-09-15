@@ -87,7 +87,7 @@
         (q || kind !== "all" ? "" : '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="note">＋ New Note</button><button class="btn btn-outline btn-sm" data-empty-capture="idea">＋ New Idea</button></div>') + "</div>";
       wireCards(list, renderList);
     }
-    $("#brain-q", root).addEventListener("input", renderList);
+    $("#brain-q", root).addEventListener("input", NB.debounce(renderList, 120));
     $("#brain-kind", root).addEventListener("change", renderList);
     $("#brain-ask", root).addEventListener("click", function () { openAskModal(); });
     renderList();
@@ -133,7 +133,7 @@
       wireCards(list, renderList);
       $$('[data-empty-capture]', list).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
     }
-    $("#notes-q", root).addEventListener("input", renderList);
+    $("#notes-q", root).addEventListener("input", NB.debounce(renderList, 120));
     $("#notes-cat", root).addEventListener("change", renderList);
     $("#notes-add", root).addEventListener("click", function () { openCapture("note"); });
     renderList();
@@ -226,7 +226,7 @@
       });
       wireCards(list, renderList);
     }
-    $("#goals-q", root).addEventListener("input", renderList);
+    $("#goals-q", root).addEventListener("input", NB.debounce(renderList, 120));
     $("#goals-status", root).addEventListener("change", renderList);
     $("#goals-add", root).addEventListener("click", function () { openCapture("goal"); });
     $("#goals-ask", root).addEventListener("click", function () { openAskModal(); });

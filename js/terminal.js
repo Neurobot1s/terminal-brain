@@ -195,7 +195,7 @@
         ["help", "show this list"], ["whoami", "who built this"], ["stats", "brain summary"],
         ["health", "brain health"], ["ls <kind>", "list notes/ideas/goals/knowledge"],
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
-        ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query gemini"],
+        ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query the AI"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
         ["key / aitest", "set or test the AI key"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
@@ -272,11 +272,11 @@
       NB.openCapture(kind);
       return [["t-ok", "opening capture form for a new " + kind + "…"]];
     } },
-    ask: { desc: "query gemini", run: function (args) {
+    ask: { desc: "query the AI", run: function (args) {
       var q = args.join(" ").trim();
       if (!q) return [["t-err", "usage: ask <question>"]];
       NB.openAskModal(q);
-      return [["t-ok", "$ gemini — thinking with " + totalItems() + " memories…"]];
+      return [["t-ok", "$ ai — thinking with " + totalItems() + " memories…"]];
     } },
     theme: { desc: "switch theme", run: function (args) {
       var t = (args[0] || "").toLowerCase();

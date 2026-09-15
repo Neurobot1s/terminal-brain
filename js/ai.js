@@ -98,10 +98,23 @@
   }
 
   /* Diagnostic used by Settings → AI Connection and terminal `aitest`. */
+  function hostChallenge(r) {
+    /* InfinityFree sometimes intercepts the first request with a JS cookie
+       check — the response is then HTML, not JSON. Tell the user exactly that. */
+    return !r.data && r.ok
+      ? "Server replied with a non-JSON page (host security check). Reload the page once, then try again."
+      : null;
+  }
+
   NB.testGemini = function () {
     return postAI([{ role: "user", content: "Reply with exactly: OK" }], 256).then(function (r) {
       if (r.ok) {
         var t = extractAnswer(r.data);
+        if (!t && r.data === null) {
+          var hc = hostChallenge(r);
+          lastError = hc;
+          return { ok: false, message: hc };
+        }
         lastError = "";
         return { ok: true, message: "AI connection OK — model replied: " + (t || "(empty)") };
       }
@@ -122,6 +135,11 @@
         var msg = apiError(r.data) || "HTTP " + r.status;
         lastError = msg;
         throw new Error("AI: " + msg);
+      }
+      if (r.data === null) {
+        var hc = hostChallenge(r);
+        lastError = hc || "Non-JSON server response";
+        throw new Error(hc || "AI: server returned an unreadable response.");
       }
       var text = extractAnswer(r.data);
       if (!text) {

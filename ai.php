@@ -8,6 +8,7 @@
 
 header("Content-Type: application/json; charset=utf-8");
 header("X-Content-Type-Options: nosniff");
+header("Cache-Control: no-store");
 
 /* ── key: edit here to swap keys, no JS changes needed ── */
 $SERVER_KEY = "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";
@@ -48,7 +49,11 @@ $clean = array();
 foreach ($messages as $m) {
   if (!is_array($m) || !isset($m["role"], $m["content"])) continue;
   $role = in_array($m["role"], array("system", "user", "assistant"), true) ? $m["role"] : "user";
-  $clean[] = array("role" => $role, "content" => mb_substr((string)$m["content"], 0, 24000));
+  $content = (string)$m["content"];
+  if (strlen($content) > 24000) {
+    $content = function_exists("mb_substr") ? mb_substr($content, 0, 24000) : substr($content, 0, 24000);
+  }
+  $clean[] = array("role" => $role, "content" => $content);
 }
 if (!count($clean)) {
   out(400, array("error" => array("message" => "messages[] had no valid items")));
