@@ -127,10 +127,26 @@
     });
   };
 
+  function friendly(err) {
+    var m = err && err.message ? err.message : String(err);
+    if (/Failed to fetch|NetworkError|network|ERR_INTERNET/i.test(m)) {
+      return navigator && navigator.onLine === false
+        ? "You're offline — reconnect and try again."
+        : "Network error — check your connection and try again.";
+    }
+    if (/aborted|timed out/i.test(m)) return "The AI took too long to respond — try again.";
+    return m;
+  }
+
   NB.askGemini = function (question) {
     if (callCount >= 100) return Promise.reject(new Error("Demo limit reached (100 asks per session). Refresh the page to reset."));
     callCount++;
-    return postAI(messagesFor(question), 900).then(function (r) {
+    var msgs = messagesFor(question);
+    /* one automatic retry for transient upstream hiccups (5xx) */
+    return postAI(msgs, 900).catch(function (e) {
+      if (e && e.transient) return postAI(msgs, 900);
+      throw e;
+    }).then(function (r) {
       if (!r.ok) {
         var msg = apiError(r.data) || "HTTP " + r.status;
         lastError = msg;
@@ -140,6 +156,12 @@
         var hc = hostChallenge(r);
         lastError = hc || "Non-JSON server response";
         throw new Error(hc || "AI: server returned an unreadable response.");
+      }
+      if (!r.ok && r.status >= 500) {
+        lastError = "Server busy (HTTP " + r.status + ")";
+        var retry = new Error("AI is busy right now — try again in a moment.");
+        retry.transient = true;
+        throw retry;
       }
       var text = extractAnswer(r.data);
       if (!text) {
@@ -181,7 +203,7 @@
       }).catch(function (err) {
         go.disabled = false;
         go.textContent = "✦ Ask";
-        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || "Request failed") + "</div>";
+        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(friendly(err)) + "</div>";
       });
     }
     modal.body.querySelector("#ask-go").addEventListener("click", runAsk);

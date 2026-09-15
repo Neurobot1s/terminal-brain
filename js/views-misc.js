@@ -158,8 +158,14 @@
       reader.readAsText(file);
       e.target.value = "";
     });
-    $("#set-reset", root).addEventListener("click", function () { resetDemo(); toast("Demo data restored."); rerender(); });
-    $("#set-clear", root).addEventListener("click", function () { clearAll(); toast("All memories erased."); rerender(); });
+    $("#set-reset", root).addEventListener("click", function () {
+      if (!window.confirm("Restore the demo data? Your current memories will be replaced.")) return;
+      resetDemo(); toast("Demo data restored."); rerender();
+    });
+    $("#set-clear", root).addEventListener("click", function () {
+      if (!window.confirm("Erase ALL memories? This cannot be undone.")) return;
+      clearAll(); toast("All memories erased."); rerender();
+    });
     $("#set-credits", root).addEventListener("click", function () { if (NB.openCredits) NB.openCredits(); });
     return root;
   };

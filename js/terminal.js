@@ -422,7 +422,9 @@
           ));
           return;
         }
-        var res = cmd.run(args);
+        var res;
+        try { res = cmd.run(args); }
+        catch (err) { print([["t-err", "error: " + (err && err.message ? err.message : "unknown")]]); return; }
         if (!res) return;
         if (res.clear) { out.innerHTML = ""; return; }
         if (res.close) { close(); return; }

@@ -317,6 +317,11 @@
     if (!location.hash) location.hash = "#/";
     route();
     showCredit();
+    if (window.NB_RECOVERY && NB.toast) {
+      var msg = window.NB_RECOVERY;
+      window.NB_RECOVERY = null;
+      setTimeout(function () { NB.toast(msg, "warn"); }, 1200);
+    }
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

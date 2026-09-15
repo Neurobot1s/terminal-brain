@@ -73,9 +73,19 @@
 
   /* ---------- store ---------- */
   var KEY = "neurobot.v1.data";
+  var BACKUP_KEY = "neurobot.v1.backup";
   var ACTIVITY_LIMIT = 50;
   var _store = null;
   var listeners = [];
+
+  /* Safe storage: some browsers/private modes throw on ANY access. */
+  var mem = {};
+  var storage = (function () {
+    try { var t = "__nb"; localStorage.setItem(t, "1"); localStorage.removeItem(t); return localStorage; }
+    catch (e) { return null; }
+  })();
+  function sGet(k) { if (!storage) return mem[k] || null; try { return storage.getItem(k); } catch (e) { return mem[k] || null; } }
+  function sSet(k, v) { mem[k] = v; if (!storage) return; try { storage.setItem(k, v); } catch (e) {} }
 
   function seed() {
     var now = Date.now();
@@ -119,20 +129,71 @@
     };
   }
 
+  /* Deep sanitize: guarantees the app never crashes on malformed data
+     (hand-edited localStorage, old versions, imported files). */
+  function sanitize(s) {
+    var out = { notes: [], ideas: [], goals: [], knowledge: [], activity: [] };
+    if (!s || typeof s !== "object") return out;
+    var lists = { notes: "note", ideas: "idea", goals: "goal", knowledge: "knowledge" };
+    Object.keys(lists).forEach(function (key) {
+      if (!Array.isArray(s[key])) return;
+      out[key] = s[key]
+        .filter(function (x) { return x && typeof x.title === "string" && x.title.trim(); })
+        .slice(0, 1000)
+        .map(function (x) {
+          var item = { id: typeof x.id === "string" && x.id ? String(x.id).slice(0, 64) : uid(), kind: lists[key], title: String(x.title).slice(0, 300), createdAt: Number(x.createdAt) || Date.now() };
+          if (x.body) item.body = String(x.body).slice(0, 5000);
+          if (x.category) item.category = String(x.category).slice(0, 60);
+          if (x.topic) item.topic = String(x.topic).slice(0, 60);
+          if (x.source) item.source = String(x.source).slice(0, 200);
+          if (x.status) item.status = String(x.status).slice(0, 20);
+          if (x.progress != null) item.progress = Math.max(0, Math.min(100, Number(x.progress) || 0));
+          if (x.deadline) item.deadline = String(x.deadline).slice(0, 10);
+          if (x.pinned) item.pinned = true;
+          return item;
+        });
+    });
+    if (Array.isArray(s.activity)) {
+      out.activity = s.activity.filter(function (a) { return a && typeof a.title === "string"; }).slice(0, ACTIVITY_LIMIT)
+        .map(function (a) { return { id: uid(), kind: String(a.kind || "note").slice(0, 20), title: String(a.title).slice(0, 300), createdAt: Number(a.createdAt) || Date.now() }; });
+    }
+    return out;
+  }
+
   function persist(s) {
-    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+    var json = JSON.stringify(s);
+    try { storage.setItem(KEY, json); }
+    catch (e) {
+      /* quota exceeded → try dropping activity first, then give up silently */
+      try { storage.setItem(KEY, JSON.stringify(Object.assign({}, s, { activity: [] }))); } catch (e2) {}
+    }
+    sSet(BACKUP_KEY, json); /* rolling backup, no quota pressure (same try/catch) */
   }
   function load() {
-    try {
-      var raw = localStorage.getItem(KEY);
-      if (raw) {
+    var raw = null;
+    try { raw = storage.getItem(KEY); } catch (e) {}
+    if (raw) {
+      try {
         var p = JSON.parse(raw);
-        if (p && Array.isArray(p.notes) && Array.isArray(p.ideas) && Array.isArray(p.goals) && Array.isArray(p.knowledge)) {
-          if (!Array.isArray(p.activity)) p.activity = [];
-          return p;
+        if (p && typeof p === "object") {
+          var clean = sanitize(p);
+          if (clean.notes.length + clean.ideas.length + clean.goals.length + clean.knowledge.length > 0) return clean;
         }
-      }
-    } catch (e) { /* corrupted -> reseed */ }
+      } catch (e) { /* corrupted → try backup */ }
+      /* corrupted primary → try the rolling backup before reseeding */
+      try {
+        var braw = storage.getItem(BACKUP_KEY);
+        if (braw) {
+          var b = sanitize(JSON.parse(braw));
+          if (b.notes.length + b.ideas.length + b.goals.length + b.knowledge.length > 0) {
+            persist(b);
+            window.NB_RECOVERY = "restored from backup";
+            return b;
+          }
+        }
+      } catch (e2) { /* fall through to reseed */ }
+      window.NB_RECOVERY = "data was corrupted — started fresh";
+    }
     var fresh = seed();
     persist(fresh);
     return fresh;
@@ -143,7 +204,7 @@
     return _store;
   }
   function setStore(next) {
-    _store = next;
+    _store = sanitize(next);
     persist(_store);
     for (var i = 0; i < listeners.length; i++) { try { listeners[i](); } catch (e) {} }
   }
