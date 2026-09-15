@@ -25,7 +25,15 @@ function out($code, $payload) {
 }
 
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
-  out(405, array("error" => array("message" => "POST only")));
+  /* GET = health check: open https://your-domain/ai.php in a browser.
+     If you see this JSON, PHP + this file are working on your host. */
+  out(200, array(
+    "ok" => true,
+    "service" => "neurobot ai proxy",
+    "model" => $ALLOWED_MODELS[0],
+    "key_configured" => $SERVER_KEY !== "",
+    "hint" => "POST JSON {messages:[{role:user,content:'...'}]} to use",
+  ));
 }
 
 /* client-supplied key override (optional) */

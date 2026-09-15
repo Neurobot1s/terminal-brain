@@ -16,14 +16,18 @@ Just open `index.html` in a browser — that's it. It also works from any static
 
 ## Deploy to InfinityFree (via GitHub)
 
-1. Push this folder to a GitHub repo.
+1. Push this folder to a GitHub repo (`.env*`, `tests/` and `README.md` are
+gitignored or dev-only — don't ship them).
 2. In InfinityFree's control panel, open **File Manager → htdocs**.
-3. Upload these files into `htdocs/` (or use `git clone` + copy):
-   - `index.html`
-   - `styles.css`
-   - `logo.svg`
-   - the `js/` folder
-4. Visit your domain. Done — it's a static app, nothing else to configure.
+3. Upload everything:
+   - `index.html`, `ai.php`, `.htaccess`, `logo.svg`
+   - `styles.css`, `styles.polish.css`, `styles.perf.css`
+   - the `js/` folder (all 11 files)
+4. Visit your domain.
+
+**Check AI is alive:** open `https://your-domain/ai.php` in a browser — you
+should see `{"ok":true,...}`. That confirms PHP + the proxy work. Then in the
+app, press `` ` `` and run `aitest`.
 
 ## Files
 
@@ -33,6 +37,7 @@ styles.css            premium dark theme, glassmorphism, fully responsive
 styles.polish.css     polish layer (shortcuts, drag states, palette nav)
 styles.perf.css       performance overrides, click effect, responsive fixes
 ai.php                AI proxy — forwards Ask requests to NVIDIA, key stays server-side
+.htaccess             default document + cache rules (InfinityFree-friendly)
 logo.svg              favicon/logo
 js/
   core.js             localStorage store, helpers, seed data
