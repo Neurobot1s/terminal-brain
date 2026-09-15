@@ -2,16 +2,64 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <title>NeuroBot — Your Second Brain</title>
-    <meta
-      name="description"
-      content="NeuroBot — your personal second brain. Capture, organize, connect and retrieve your knowledge, ideas and goals."
-    />
+    <link rel="icon" href="logo.svg" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div class="app">
+      <!-- ================= SIDEBAR ================= -->
+      <aside class="sidebar" id="sidebar">
+        <div class="side-top">
+          <a class="brand" href="#/">
+            <span class="logo-mark">▚</span>
+            <span class="brand-text">
+              <strong>NeuroBot</strong>
+              <em>Your Second Brain.</em>
+            </span>
+          </a>
+          <button id="side-collapse" class="icon-btn" title="Collapse sidebar">«</button>
+        </div>
+        <nav class="nav" id="nav"></nav>
+        <div class="side-bottom">
+          <div class="profile-chip">
+            <span class="avatar">TL</span>
+            <span class="profile-meta">
+              <strong>Tanishq Lalwani</strong>
+              <em>Free plan · local-only</em>
+            </span>
+          </div>
+          <div class="brain-health">
+            <span class="bh-dot" id="bh-dot"></span>
+            <span id="bh-label">Brain health: warming up</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ================= MAIN ================= -->
+      <div class="main">
+        <header class="topbar">
+          <button id="menu-btn" class="icon-btn only-mobile" title="Menu">☰</button>
+          <button id="search-btn" class="search-pill">
+            <span class="pill-ico">⌕</span>
+            <span class="pill-label">Search your brain…</span>
+            <span class="pill-kbd"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+          </button>
+          <div class="top-actions">
+            <button id="live-btn" class="live-btn"><span class="live-dot"></span>Live</button>
+            <button id="notif-btn" class="icon-btn" title="Notifications">◔</button>
+          </div>
+        </header>
+
+        <main id="view" class="view"></main>
+      </div>
+    </div>
+
+    <!-- floating shells -->
+    <div id="modal-root"></div>
+    <div id="cmdk-root"></div>
+    <div id="toast-root"></div>
+
+    <script type="module" src="js/main.js"></script>
   </body>
 </html>
