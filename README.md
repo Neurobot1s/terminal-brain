@@ -77,6 +77,19 @@ js/
 - **Living graph** — neural-network node sizes reflect your real memory counts;
   edges pulse with an animated flow. Hover nodes for per-topic totals.
 
+## Tests
+
+Optional (not needed to run the app): two jsdom test suites verify the app really
+boots and every route renders:
+
+```bash
+npm install jsdom --no-save   # anywhere with node
+node tests/boot.test.js       # 10 checks: boot, CRUD, modals, terminal, py, click fx
+node tests/routes.test.js     # 16 checks: every page renders, kanban, graph, panels
+```
+
+Don't upload the `tests/` folder to htdocs — it's for development only.
+
 ## Notes
 
 - All data lives in `localStorage` on the device — nothing is sent anywhere except

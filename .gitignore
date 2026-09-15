@@ -1,4 +1,7 @@
-.env.local
-node_modules
-dist
-src/convex/_generated
+# NeuroBot — only these files ship (see README)
+.env*
+node_modules/
+dist/
+src/
+*.log
+.DS_Store

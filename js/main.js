@@ -285,8 +285,10 @@
 
   /* ---------- credit popup (once per session) ---------- */
   function showCredit() {
-    if (sessionStorage.getItem("nb_credit")) return;
-    sessionStorage.setItem("nb_credit", "1");
+    try {
+      if (sessionStorage.getItem("nb_credit")) return;
+      sessionStorage.setItem("nb_credit", "1");
+    } catch (e) { /* private mode / opaque origin — just show it */ }
     setTimeout(function () {
       if (NB.openCredits) NB.openCredits();
     }, 900);
