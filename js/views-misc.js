@@ -48,6 +48,16 @@
         '<div class="row-between"><span>Daily capture reminder</span><label class="switch"><input type="checkbox" id="set-remind"><span class="slider"></span></label></div>' +
         '<div class="row-between"><span>Weekly digest (demo)</span><label class="switch"><input type="checkbox" id="set-digest"><span class="slider"></span></label></div>' +
       "</section>" +
+      '<section class="panel"><h3>AI Connection</h3>' +
+        '<p class="muted">Gemini answers questions using your memories. Your key is stored only in this browser.</p>' +
+        '<div class="row-between"><span>Current key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
+        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Paste a Gemini API key (AIza… or AQ.…)" autocomplete="off" spellcheck="false" />' +
+          '<button class="btn btn-primary btn-sm" id="ai-key-save">Save</button></div>' +
+        '<div class="ai-key-row"><button class="btn btn-outline btn-sm" id="ai-key-test">Test connection</button>' +
+          '<button class="btn btn-outline btn-sm" id="ai-key-reset">Use default key</button></div>' +
+        '<div id="ai-test-out" class="ai-test-out"></div>' +
+        '<p class="muted muted-xs">Need a key? Create a free one at aistudio.google.com/apikey — keys starting with <code>AIza</code> are the most compatible.</p>' +
+      '</section>' +
       '<section class="panel"><h3>Data</h3>' +
         '<div class="row-between"><span>Export brain as JSON</span><button class="btn btn-outline btn-sm" id="set-export">Export</button></div>' +
         '<div class="row-between"><span>Import brain from JSON</span><button class="btn btn-outline btn-sm" id="set-import">Import</button></div>' +
@@ -65,6 +75,32 @@
       "</section></div>");
 
     var prefs = loadPrefs();
+    var keyPrev = $("#ai-key-preview", root);
+    function maskKey(k) { return k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k; }
+    keyPrev.textContent = maskKey(NB.getGeminiKey());
+    $("#ai-key-save", root).addEventListener("click", function () {
+      var v = $("#ai-key-input", root).value.trim();
+      if (!v) { toast("Paste a key first.", "err"); return; }
+      NB.setGeminiKey(v);
+      keyPrev.textContent = maskKey(NB.getGeminiKey());
+      $("#ai-key-input", root).value = "";
+      toast("Key saved locally.");
+    });
+    $("#ai-key-test", root).addEventListener("click", function () {
+      var out = $("#ai-test-out", root);
+      out.textContent = "$ gemini --test … pinging Gemini…";
+      out.className = "ai-test-out pending";
+      NB.testGemini().then(function (r) {
+        out.textContent = (r.ok ? "✓ " : "⚠ ") + r.message;
+        out.className = "ai-test-out " + (r.ok ? "ok" : "err");
+      });
+    });
+    $("#ai-key-reset", root).addEventListener("click", function () {
+      try { localStorage.removeItem("nb_gemini_key"); } catch (e) {}
+      keyPrev.textContent = maskKey(NB.getGeminiKey());
+      toast("Reverted to the built-in key.");
+    });
+
     $("#set-density", root).checked = prefs.compact;
     $("#set-motion", root).checked = prefs.reduceMotion;
     $("#set-theme", root).value = prefs.theme;

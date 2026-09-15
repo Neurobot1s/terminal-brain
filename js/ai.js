@@ -1,14 +1,29 @@
 /* ============================================================
    NeuroBot — ai.js (classic script; extends window.NB)
-   Gemini integration, hardcoded key (school project).
-   Model: gemini-2.0-flash (free tier) with fallbacks.
+   Gemini integration. Auth-key compatible (AQ. / AIza both work).
+   Key priority: localStorage override → hardcoded fallback.
    ============================================================ */
 (function () {
   "use strict";
   if (!window.NB) return;
 
   var GEMINI_KEY = "AQ.Ab8RN6JvNBW1MK9_Hv41sCU7IjDuDr3MGnrWIVRGEDAACSSiQQ";
+  var KEY_STORE = "nb_gemini_key";
+  var ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/";
   var MODELS = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash"];
+  var callCount = 0, lastError = "";
+
+  NB.getGeminiKey = function () {
+    try { return localStorage.getItem(KEY_STORE) || GEMINI_KEY; } catch (e) { return GEMINI_KEY; }
+  };
+  NB.setGeminiKey = function (k) {
+    k = String(k || "").trim();
+    if (!k) return false;
+    try { localStorage.setItem(KEY_STORE, k); } catch (e) {}
+    callCount = 0; lastError = "";
+    return true;
+  };
+  NB.geminiStatus = function () { return { calls: callCount, lastError: lastError }; };
 
   function brainContext() {
     var s = NB.getStore(), lines = [];
@@ -33,33 +48,91 @@
     ].join("\n");
   }
 
-  var callCount = 0;
+  function post(model, body) {
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 15000) : null;
+    return fetch(ENDPOINT + model + ":generateContent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": NB.getGeminiKey() },
+      body: body,
+      signal: ctrl ? ctrl.signal : undefined,
+    }).then(function (res) {
+      if (timer) clearTimeout(timer);
+      return res.json().then(function (data) {
+        return { ok: res.ok, status: res.status, data: data };
+      }, function () {
+        return { ok: res.ok, status: res.status, data: null };
+      });
+    }, function (netErr) {
+      if (timer) clearTimeout(timer);
+      var err = new Error(ctrl && ctrl.signal && ctrl.signal.aborted ? "Request timed out (15s)." : "Network error — check your connection.");
+      err.network = true;
+      throw err;
+    });
+  }
+
+  function extractText(data) {
+    var parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+    return parts.map(function (p) { return p.text || ""; }).join("").trim();
+  }
+
+  function apiError(data) {
+    if (data && data.error && data.error.message) return String(data.error.message);
+    return "";
+  }
+
+  /* Diagnostic: one live request, full detail. Used by Settings + `aitest`. */
+  NB.testGemini = function () {
+    var body = JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with the single word: OK" }] }] });
+    return post("gemini-2.0-flash", body).then(function (r) {
+      if (r.ok) {
+        var t = extractText(r.data);
+        lastError = "";
+        return { ok: true, message: t ? "Connection OK — model replied: " + t : "Connection OK." };
+      }
+      var msg = apiError(r.data) || ("HTTP " + r.status);
+      lastError = msg;
+      return { ok: false, message: msg };
+    }).catch(function (err) {
+      lastError = err.message;
+      return { ok: false, message: err.message };
+    });
+  };
 
   NB.askGemini = function (question) {
-    if (callCount >= 100) return Promise.reject(new Error("Demo limit reached (100 asks per session)."));
+    if (callCount >= 100) return Promise.reject(new Error("Demo limit reached (100 asks per session). Refresh the page to reset."));
     callCount++;
     var body = JSON.stringify({
       contents: [{ role: "user", parts: [{ text: buildPrompt(question) }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 256 },
     });
     var idx = 0;
-    function attempt() {
-      if (idx >= MODELS.length) return Promise.reject(new Error("Gemini request failed — check your connection."));
+    function attempt(prevMsg) {
+      if (idx >= MODELS.length) {
+        var m = prevMsg || "All models failed — check your connection.";
+        lastError = m;
+        return Promise.reject(new Error(m));
+      }
       var model = MODELS[idx++];
-      return fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(GEMINI_KEY),
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: body }
-      ).then(function (res) {
-        if (!res.ok) return attempt();
-        return res.json().then(function (data) {
-          var parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-          var text = parts.map(function (p) { return p.text || ""; }).join("").trim();
-          if (!text) return attempt();
-          return text;
-        });
-      }).catch(function () { return attempt(); });
+      return post(model, body).then(function (r) {
+        if (r.ok) {
+          var text = extractText(r.data);
+          if (text) { lastError = ""; return text; }
+          return attempt(apiError(r.data) || "Empty response from " + model);
+        }
+        var msg = apiError(r.data) || "HTTP " + r.status;
+        lastError = msg;
+        // Auth/key problems will not be fixed by another model — fail fast with the real message.
+        if (r.status === 400 || r.status === 401 || r.status === 403) {
+          return Promise.reject(new Error("Gemini: " + msg));
+        }
+        return attempt(msg);
+      }).catch(function (err) {
+        if (err && err.network) return attempt(err.message);
+        return Promise.reject(err);
+      });
     }
-    return attempt();
+    return attempt("");
   };
 
   NB.openAskModal = function (preFill) {
@@ -91,7 +164,10 @@
       }).catch(function (err) {
         go.disabled = false;
         go.textContent = "✦ Ask Gemini";
-        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || "Request failed") + "</div>";
+        var hint = /API key|invalid|expired|credential|UNAUTHENTICATED/i.test(err.message || "")
+          ? '<div class="muted-xs" style="margin-top:6px">Fix: Settings → AI Connection → paste a fresh key from aistudio.google.com/apikey, or run <code>key &lt;your-key&gt;</code> in the terminal.</div>'
+          : "";
+        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || "Request failed") + "</div>" + hint;
       });
     }
     modal.body.querySelector("#ask-go").addEventListener("click", runAsk);

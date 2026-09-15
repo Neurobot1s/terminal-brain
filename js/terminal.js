@@ -5,7 +5,154 @@
   if (!window.NB) return;
   var $ = NB.$, el = NB.el, esc = NB.esc;
   var getStore = NB.getStore, totalItems = NB.totalItems;
-  var HISTORY = [], histIdx = -1;
+  var HISTORY = [], histIdx = -1, PY_SCOPE = {};
+
+  /* ---------- tiny Python interpreter (py) ---------- */
+  var PY_PREC = { "or": 1, "and": 2, "==": 3, "!=": 3, "<": 3, ">": 3, "<=": 3, ">=": 3, "+": 4, "-": 4, "*": 5, "/": 5, "//": 5, "%": 5, "**": 6 };
+  var PY_FUNCS = {
+    print: function (args) { return { print: args.map(pyStr).join(" ") }; },
+    len: function (a) { return a.length != null ? a.length : String(a).length; },
+    abs: Math.abs, min: function (a) { return Math.min.apply(null, a); }, max: function (a) { return Math.max.apply(null, a); },
+    round: function (a, n) { var p = n || 0; return Math.round(a * Math.pow(10, p)) / Math.pow(10, p); },
+    int: function (a) { return Math.trunc(Number(a)) || 0; }, float: function (a) { return Number(a) || 0; },
+    str: function (a) { return pyStr(a); }, sum: function (a) { return a.reduce(function (x, y) { return x + y; }, 0); },
+  };
+  function pyStr(v) {
+    if (v === null || v === undefined) return "None";
+    if (v === true) return "True";
+    if (v === false) return "False";
+    if (typeof v === "number" && !isFinite(v)) return "inf";
+    if (typeof v === "number") return String(Math.round(v * 1e10) / 1e10);
+    return String(v);
+  }
+  function pyTokenize(src) {
+    var toks = [], i = 0;
+    while (i < src.length) {
+      var c = src[i];
+      if (/\s/.test(c)) { i++; continue; }
+      if (c === "#") break;
+      if (c === "\"" || c === "'") {
+        var q = c, j = i + 1, s = "";
+        while (j < src.length && src[j] !== q) { s += src[j] + (src[j] === "\\" ? (src[j + 1] || "") : ""); if (src[j] === "\\") j += 2; else j++; }
+        if (j >= src.length) throw new Error("unterminated string");
+        toks.push({ t: "str", v: s.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\\\/g, "\\").replace(/\\"/g, "\"").replace(/\\'/g, "'") }); i = j + 1; continue;
+      }
+      if (/[0-9]/.test(c) || (c === "." && /[0-9]/.test(src[i + 1] || ""))) {
+        var n = src.slice(i).match(/^([0-9]*\.?[0-9]+)(e[+-]?[0-9]+)?/i)[0];
+        toks.push({ t: "num", v: Number(n) }); i += n.length; continue;
+      }
+      if (/[A-Za-z_]/.test(c)) {
+        var w = src.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*/)[0];
+        toks.push({ t: w === "True" || w === "False" || w === "None" ? "num" : "id", v: w === "True" ? true : w === "False" ? false : w === "None" ? null : w }); i += w.length; continue;
+      }
+      var three = src.slice(i, i + 2), two = src.slice(i, i + 2);
+      if (two === "**" || two === "//" || two === "==" || two === "!=" || two === "<=" || two === ">=") { toks.push({ t: "op", v: two }); i += 2; continue; }
+      if ("+-*/%<>=(),:".indexOf(c) !== -1) { toks.push({ t: "op", v: c }); i++; continue; }
+      throw new Error("unexpected character '" + c + "'");
+    }
+    return toks;
+  }
+  function pyParse(toks, scope) {
+    var pos = 0;
+    function peek() { return toks[pos]; }
+    function eat() { return toks[pos++]; }
+    function expr(minP) {
+      var left = unary();
+      for (;;) {
+        var tk = peek();
+        if (!tk || tk.t !== "op" || !(tk.v in PY_PREC)) break;
+        var p = PY_PREC[tk.v];
+        if (p < minP) break;
+        var op = eat().v;
+        var right = op === "**" ? expr(p) : expr(p + 1);
+        left = binop(op, left, right);
+      }
+      return left;
+    }
+    function binop(op, a, b) {
+      switch (op) {
+        case "+": return typeof a === "string" || typeof b === "string" ? pyStr(a) + pyStr(b) : a + b;
+        case "-": return a - b; case "*": return typeof a === "string" && typeof b === "number" ? a.repeat(Math.max(0, b | 0)) : a * b;
+        case "/": if (b === 0) throw new Error("division by zero"); return a / b;
+        case "//": if (b === 0) throw new Error("division by zero"); return Math.floor(a / b);
+        case "%": return ((a % b) + b) % b;
+        case "**": return Math.pow(a, b);
+        case "==": return a === b; case "!=": return a !== b;
+        case "<": return a < b; case ">": return a > b; case "<=": return a <= b; case ">=": return a >= b;
+        case "and": return a ? b : a; case "or": return a ? a : b;
+      }
+      throw new Error("bad operator " + op);
+    }
+    function unary() {
+      var tk = peek();
+      if (tk && tk.t === "op" && tk.v === "-") { eat(); return -unary(); }
+      if (tk && tk.t === "op" && tk.v === "+") { eat(); return unary(); }
+      return primary();
+    }
+    function primary() {
+      var tk = eat();
+      if (!tk) throw new Error("unexpected end of expression");
+      if (tk.t === "num" || tk.t === "str") return tk.v;
+      if (tk.t === "op" && tk.v === "(") { var v = expr(0); var nx = eat(); if (!nx || nx.v !== ")") throw new Error("missing )"); return v; }
+      if (tk.t === "id") {
+        var name = tk.v;
+        if (peek() && peek().t === "op" && peek().v === "(") {
+          eat();
+          var args = [];
+          if (!(peek() && peek().v === ")")) { args.push(expr(0)); while (peek() && peek().v === ",") { eat(); args.push(expr(0)); } }
+          var close = eat(); if (!close || close.v !== ")") throw new Error("missing )");
+          var fn = PY_FUNCS[name];
+          if (!fn) throw new Error("unknown function '" + name + "'");
+          return fn(args, scope);
+        }
+        if (name in scope) return scope[name];
+        if (["list", "dict", "input", "open", "range"].indexOf(name) !== -1) throw new Error("'" + name + "' is not supported in this mini interpreter");
+        throw new Error("name '" + name + "' is not defined");
+      }
+      throw new Error("unexpected '" + (tk.v || tk.t) + "'");
+    }
+    return { expr: expr, done: function () { return pos >= toks.length; } };
+  }
+  function pySplitTop(src) {
+    var parts = [], cur = "", depth = 0, q = null;
+    for (var i = 0; i < src.length; i++) {
+      var c = src[i];
+      if (q) { cur += c; if (c === "\\") { cur += src[i + 1] || ""; i++; } else if (c === q) q = null; continue; }
+      if (c === "\"" || c === "'") { q = c; cur += c; continue; }
+      if (c === "(" || c === "[") depth++; if (c === ")" || c === "]") depth--;
+      if (c === ";" && depth === 0) { parts.push(cur); cur = ""; continue; }
+      cur += c;
+    }
+    if (cur.trim()) parts.push(cur);
+    return parts;
+  }
+  function pyExec(src, scope) {
+    var outs = [];
+    pySplitTop(src).forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      var m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(\+=|-=|=)\s*([\s\S]+)$/);
+      if (m && m[2] !== "+=" && m[2] !== "-=" && m[3] !== undefined && !/^=/.test(m[3])) {
+        var p = pyParse(pyTokenize(m[3]), scope);
+        scope[m[1]] = p.expr(0);
+        if (!p.done()) throw new Error("unexpected token after expression");
+        return;
+      }
+      if (m && (m[2] === "+=" || m[2] === "-=")) {
+        if (!(m[1] in scope)) throw new Error("name '" + m[1] + "' is not defined");
+        var p2 = pyParse(pyTokenize(m[3]), scope);
+        var v2 = p2.expr(0);
+        scope[m[1]] = m[2] === "+=" ? scope[m[1]] + v2 : scope[m[1]] - v2;
+        return;
+      }
+      var p3 = pyParse(pyTokenize(line), scope);
+      var val = p3.expr(0);
+      if (!p3.done()) throw new Error("unexpected token after expression");
+      if (val && typeof val === "object" && val.print) outs.push(["t-ok", val.print]);
+      else if (val !== undefined && val !== null) outs.push(["t-info", pyStr(val)]);
+    });
+    return outs;
+  }
 
   var PAGES = {
     dashboard: "#/", home: "#/", brain: "#/brain", "my-brain": "#/brain",
@@ -24,7 +171,8 @@
         ["health", "brain health"], ["ls <kind>", "list notes/ideas/goals/knowledge"],
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
         ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query gemini"],
-        ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
+        ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
+        ["key / aitest", "set or test the gemini key"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
       ];
       rows.forEach(function (r) { out.push(["t-cmd", "  " + pad(r[0], 18) + " " + r[1]]); });
@@ -130,16 +278,56 @@
     clear: { desc: "wipe screen", run: function () { return { clear: true }; } },
     exit: { desc: "close terminal", run: function () { return { close: true }; } },
     echo: { desc: "print text", run: function (args) { return [["t-info", args.join(" ")]]; } },
+    print: { desc: "print text to output", run: function (args) { return [["t-ok", args.join(" ")]]; } },
+    py: { desc: "run python-ish code", run: function (args) {
+      var src = args.join(" ").trim();
+      if (!src || src === "help" || src === "-h") {
+        return [["t-acc", "mini python (py) — quick reference"],
+          ["t-info", "  py 2 ** 10 + 5              → 1029"],
+          [`t-info`, `  py x = 7; print(x * 6)     → 42`],
+          ["t-info", `  py name = 'neo'; print('hi ' + name)`],
+          ["t-info", `  py round(3.14159, 2) , 10 % 3`],
+          ["t-dim", "  supported: + - * / // % ** ( ) strings, True/False/None"],
+          ["t-dim", "  fns: print, len, int, float, str, round, abs, min, max, sum"],
+          ["t-dim", "  variables persist in this terminal session (x = 5 stays set)"]];
+      }
+      try { return pyExec(src, PY_SCOPE); }
+      catch (e) { return [["t-err", "py: " + (e.message || "error")]]; }
+    } },
+    key: { desc: "set/view gemini key", run: function (args) {
+      if (!args.length) {
+        var k = NB.getGeminiKey();
+        return [["t-info", "current key: " + (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k)], ["t-dim", "  set one:  key <your-api-key>"]];
+      }
+      NB.setGeminiKey(args.join(""));
+      return [["t-ok", "key saved locally — run 'aitest' to verify"]];
+} },
+    aitest: { desc: "test gemini connection", run: function () {
+      NB.testGemini().then(function (r) {
+        var term = document.querySelector(".term-out");
+        if (!term) return;
+        var d = document.createElement("div");
+        d.className = "term-line " + (r.ok ? "t-ok" : "t-err");
+        d.textContent = (r.ok ? "✓ " : "⚠ ") + r.message;
+        term.appendChild(d);
+        term.scrollTop = term.scrollHeight;
+      });
+      return [["t-info", "$ gemini --test … pinging gemini-2.0-flash…"]];
+    } },
     sudo: { desc: "nice try", run: function () { return [["t-err", "sudo: permission denied — this brain belongs to tanishq 😄"]]; } },
   };
   CMDS.goto = CMDS.cd;
   CMDS.grep = CMDS.find;
   CMDS.quit = CMDS.exit;
   CMDS[":q"] = CMDS.exit;
+  CMDS.python = CMDS.py;
+  CMDS.py3 = CMDS.py;
+  CMDS.puts = CMDS.print;
 
   NB.openTerminal = function () {
     var root = $("#term-root");
     if (!root || root.childElementCount) return;
+    PY_SCOPE = {};
     var wrap = el(
       '<div class="term-backdrop"><div class="term-win" role="dialog" aria-label="NeuroBot terminal">' +
         '<div class="term-head">' +
