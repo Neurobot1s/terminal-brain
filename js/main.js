@@ -89,7 +89,8 @@
         .slice(0, 6)
         .map(function (p) {
           return '<a class="cmdk-item" href="' + p[0] + '"><span class="cmdk-ico">' + p[2] + "</span>" + p[1] + '<span class="cmdk-hint">page</span></a>';
-        });
+        })
+        .concat(q && "terminal".indexOf(q) !== -1 ? ['<button class="cmdk-item" type="button" data-open-term><span class="cmdk-ico">›_</span>Open Terminal<span class="cmdk-hint">command</span></button>'] : []);
     }
     function memoriesFor(q) {
       if (!q) return [];
@@ -117,6 +118,11 @@
 
     input.addEventListener("input", render);
     list.addEventListener("click", function (e) {
+      if (e.target.closest("[data-open-term]")) {
+        close();
+        if (NB.openTerminal) NB.openTerminal();
+        return;
+      }
       if (e.target.closest(".cmdk-item")) close();
     });
     document.addEventListener("keydown", onKey);
@@ -142,6 +148,8 @@
     if (localStorage.getItem("nb_side") === "1") document.querySelector(".app").classList.add("collapsed");
 
     $("#search-btn").addEventListener("click", openPalette);
+    var termBtn = $("#term-btn");
+    if (termBtn) termBtn.addEventListener("click", function () { if (NB.openTerminal) NB.openTerminal(); });
     $("#live-btn").addEventListener("click", function () { if (NB.openLive) NB.openLive(); });
     $("#notif-btn").addEventListener("click", function () {
       var n = getStore().activity.length;
@@ -149,9 +157,17 @@
     });
 
     document.addEventListener("keydown", function (e) {
+      var tag = (e.target && e.target.tagName || "").toLowerCase();
+      var typing = tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         openPalette();
+      } else if (e.key === "`" && !typing) {
+        e.preventDefault();
+        if (NB.openTerminal) NB.openTerminal();
+      } else if (e.key === "~" && !typing) {
+        e.preventDefault();
+        if (NB.openTerminal) NB.openTerminal();
       }
     });
   }

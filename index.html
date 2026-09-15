@@ -73,6 +73,7 @@
             <span class="pill-kbd"><kbd>Ctrl</kbd><kbd>K</kbd></span>
           </button>
           <div class="top-actions">
+            <button id="term-btn" class="icon-btn term-btn" title="Open terminal (~)">›_</button>
             <button id="live-btn" class="live-btn"><span class="live-dot"></span>Live</button>
             <button id="notif-btn" class="icon-btn" title="Notifications">◔</button>
           </div>
@@ -94,6 +95,7 @@
     <div class="scanlines" aria-hidden="true"></div>
     <div id="modal-root"></div>
     <div id="cmdk-root"></div>
+    <div id="term-root"></div>
     <div id="toast-root"></div>
 
     <!-- Classic scripts, dependency order — works on file:// and any static host -->
@@ -106,15 +108,10 @@
     <script src="js/views-kanban.js"></script>
     <script src="js/views-misc.js"></script>
     <script src="js/main.js"></script>
+    <script src="js/terminal.js"></script>
     <script>
       // Watchdog: if the router never booted, say so instead of a blank page.
-      setTimeout(function () {
-        var v = document.getElementById("view");
-        if (v && !v.childElementCount && !document.getElementById("boot-error")) {
-          v.innerHTML =
-            '<div style="padding:2rem;text-align:center;color:#94a3b8;font:14px monospace">⚠ App did not boot. Open the browser console (F12) and check that all files in <b>js/</b> loaded.</div>';
-        }
-      }, 2500);
+      window.NB && (window.NB._booted = true);
     </script>
   </body>
 </html>
