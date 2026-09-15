@@ -16,6 +16,22 @@
     return "Good evening";
   }
   var ROUTE_BY_TONE = { cyan: "#/knowledge", amber: "#/ideas", violet: "#/goals", green: "#/connections", gray: "#/brain" };
+
+  /* Connections = real pairs of memories sharing a topic/category. */
+  function countConnections() {
+    var s = getStore(), groups = {};
+    function add(key) { if (!key) return; groups[key] = (groups[key] || 0) + 1; }
+    s.notes.forEach(function (n) { add(n.category); });
+    s.ideas.forEach(function (i) { add(i.category); });
+    s.knowledge.forEach(function (k) { add(k.topic); });
+    var total = 0;
+    Object.keys(groups).forEach(function (key) {
+      var n = groups[key];
+      if (n > 1) total += (n * (n - 1)) / 2;
+    });
+    return total;
+  }
+
   function statCard(label, value, icon, tone) {
     return '<a class="stat-card ' + tone + '" href="' + (ROUTE_BY_TONE[tone] || "#/brain") + '">' +
       '<span class="stat-ico">' + icon + "</span>" +
@@ -35,7 +51,7 @@
         statCard("Knowledge", s.knowledge.length, "◈", "cyan") +
         statCard("Ideas", s.ideas.length, "✦", "amber") +
         statCard("Active goals", s.goals.filter(function (g) { return g.status !== "completed"; }).length, "◎", "violet") +
-        statCard("Connections", 42, "⌬", "green") +
+        statCard("Connections", countConnections(), "⌬", "green") +
         statCard("Total memories", totalItems(), "▤", "gray") +
       "</section>" +
       '<div class="dash-grid">' +

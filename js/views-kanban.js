@@ -33,7 +33,7 @@
 
     function ideaCard(i, st) {
       var m = ITEM_META.idea;
-      return '<div class="mem-card ' + m.tone + '" data-id="' + i.id + '">' +
+      return '<div class="mem-card ' + m.tone + '" draggable="true" data-drag-id="' + i.id + '" data-id="' + i.id + '">' +
         '<div class="mem-top"><span class="mem-ico ' + m.tone + '">' + m.icon + '</span>' +
         '<span class="mem-kind">' + esc(i.category) + '</span>' +
         '<button class="pin-btn ' + (i.pinned ? "on" : "") + '" data-pin="' + i.id + '">◆</button></div>' +
@@ -53,6 +53,33 @@
 
     function wireBoard() {
       var kb = $("#kanban", root);
+      /* drag & drop between status columns */
+      var draggedId = null;
+      $$('[data-drag-id]', kb).forEach(function (card) {
+        card.addEventListener('dragstart', function (e) {
+          draggedId = card.getAttribute('data-drag-id');
+          card.classList.add('dragging');
+          if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', draggedId); } catch (err) {} }
+        });
+        card.addEventListener('dragend', function () { card.classList.remove('dragging'); draggedId = null; $$('.kanban-col', kb).forEach(function (c) { c.classList.remove('drop-hover'); }); });
+      });
+      $$('.kanban-col', kb).forEach(function (col) {
+        col.addEventListener('dragover', function (e) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; col.classList.add('drop-hover'); });
+        col.addEventListener('dragleave', function (e) { if (e.target === col) col.classList.remove('drop-hover'); });
+        col.addEventListener('drop', function (e) {
+          e.preventDefault();
+          col.classList.remove('drop-hover');
+          var id = draggedId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+          if (!id) return;
+          var status = col.getAttribute('data-status');
+          var idea = getStore().ideas.find(function (x) { return x.id === id; });
+          if (idea && idea.status !== status) {
+            updateIdea(id, { status: status });
+            toast('Idea moved to ' + status + '.');
+          }
+          renderBoard();
+        });
+      });
       $$("[data-pin]", kb).forEach(function (b) {
         b.addEventListener("click", function () { togglePin("idea", b.getAttribute("data-pin")); renderBoard(); });
       });

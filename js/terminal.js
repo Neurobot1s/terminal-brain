@@ -116,6 +116,15 @@
       URL.revokeObjectURL(url);
       return [["t-ok", "exported → neurobot-brain.json"]];
     } },
+    history: { desc: "recent commands", run: function () {
+      if (!HISTORY.length) return [["t-dim", "(no history yet)"]];
+      var out = [["t-acc", "command history"]];
+      HISTORY.slice(-15).forEach(function (h, i) {
+        out.push(["t-info", "  " + pad(HISTORY.length - Math.min(HISTORY.length, 15) + i + 1, 4) + h]);
+      });
+      return out;
+    } },
+    open: { desc: "open a page", run: function (args) { return CMDS.cd.run(args); } },
     clear: { desc: "wipe screen", run: function () { return { clear: true }; } },
     exit: { desc: "close terminal", run: function () { return { close: true }; } },
     echo: { desc: "print text", run: function (args) { return [["t-info", args.join(" ")]]; } },
@@ -169,10 +178,13 @@
     document.addEventListener("keydown", onKey);
     $(".term-close", wrap).addEventListener("click", close);
     wrap.addEventListener("click", function (e) { if (e.target === wrap) close(); });
+    input.addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "l" || e.key === "L")) { e.preventDefault(); out.innerHTML = ""; input.focus(); }
+    });
 
     print([
       ["t-acc", "NeuroBot terminal — Your Second Brain."],
-      ["t-dim", "  type 'help' for commands · 'exit' to close"],
+      ["t-dim", "  type 'help' for commands · 'exit' to close · Ctrl+L clears"],
       ["t-info", "  " + totalItems() + " memories loaded from localStorage"],
     ]);
 
@@ -185,7 +197,13 @@
         printEcho(raw);
         var parts = raw.split(/\s+/), name = parts[0].toLowerCase(), args = parts.slice(1);
         var cmd = CMDS[name];
-        if (!cmd) { print([["t-err", "command not found: " + name + " — try 'help'"]]); return; }
+        if (!cmd) {
+          var names = Object.keys(CMDS).filter(function (k) { return k.indexOf(name) === 0 || name.indexOf(k) === 0; }).slice(0, 5);
+          print([["t-err", "command not found: " + name]].concat(
+            names.length ? [["t-dim", "  did you mean: " + names.join(", ") + "?"]] : [["t-dim", "  try 'help'"]]
+          ));
+          return;
+        }
         var res = cmd.run(args);
         if (!res) return;
         if (res.clear) { out.innerHTML = ""; return; }

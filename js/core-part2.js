@@ -116,12 +116,14 @@
     var root = $("#modal-root");
     if (!root) return { close: function () {}, body: document.createElement("div") };
     root.innerHTML = "";
+    var title = opts.title || (opts.subtitle ? "" : "neurobot");
     var backdrop = el(
       '<div class="modal-backdrop open">' +
         '<div class="modal ' + (opts.large ? "modal-lg" : "") + '" role="dialog" aria-modal="true">' +
           '<div class="modal-head">' +
             '<span class="term-dots"><i></i><i></i><i></i></span>' +
-            '<span class="term-title">' + esc(opts.subtitle || "neurobot") + "</span>" +
+            '<span class="term-title">' + esc(opts.subtitle || "") + "</span>" +
+            '<span class="modal-heading">' + esc(title) + "</span>" +
             '<button class="modal-close" aria-label="Close">✕</button>' +
           "</div>" +
           '<div class="modal-body"></div>' +

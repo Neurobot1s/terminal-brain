@@ -49,8 +49,10 @@
       "</section>" +
       '<section class="panel"><h3>Data</h3>' +
         '<div class="row-between"><span>Export brain as JSON</span><button class="btn btn-outline btn-sm" id="set-export">Export</button></div>' +
+        '<div class="row-between"><span>Import brain from JSON</span><button class="btn btn-outline btn-sm" id="set-import">Import</button></div>' +
         '<div class="row-between"><span>Reset demo data</span><button class="btn btn-outline btn-sm" id="set-reset">Reset</button></div>' +
         '<div class="row-between"><span>Erase all memories</span><button class="btn btn-outline btn-sm danger" id="set-clear">Erase</button></div>' +
+        '<input type="file" id="set-import-file" accept=".json,application/json" style="display:none" />' +
       "</section>" +
       '<section class="panel"><h3>Privacy</h3>' +
         '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends the selected memories to Google Gemini.</p>' +
@@ -74,15 +76,50 @@
     $("#set-remind", root).addEventListener("change", function (e) { savePrefs(Object.assign({}, prefs, { remind: e.target.checked })); });
     $("#set-digest", root).addEventListener("change", function (e) { savePrefs(Object.assign({}, prefs, { digest: e.target.checked })); });
 
-    $("#set-export", root).addEventListener("click", function () {
-      var blob = new Blob([JSON.stringify(getStore(), null, 2)], { type: "application/json" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "neurobot-brain.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      toast("Brain exported as JSON.");
+    $("#set-export", root).addEventListener("click", function () { if (NB.exportJSON) NB.exportJSON(); });
+    $("#set-import", root).addEventListener("click", function () { $("#set-import-file", root).click(); });
+    $("#set-import-file", root).addEventListener("change", function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var data = JSON.parse(String(reader.result));
+          var clean = { notes: [], ideas: [], goals: [], knowledge: [], activity: [] };
+          var kinds = { notes: "note", ideas: "idea", goals: "goal", knowledge: "knowledge" };
+          Object.keys(kinds).forEach(function (key) {
+            if (!Array.isArray(data[key])) return;
+            clean[key] = data[key]
+              .filter(function (x) { return x && typeof x.title === "string" && x.title.trim(); })
+              .slice(0, 500)
+              .map(function (x) {
+                var item = { id: NB.uid(), kind: kinds[key], title: String(x.title).slice(0, 300), createdAt: Number(x.createdAt) || Date.now() };
+                if (x.body) item.body = String(x.body).slice(0, 5000);
+                if (x.category) item.category = String(x.category).slice(0, 60);
+                if (x.topic) item.topic = String(x.topic).slice(0, 60);
+                if (x.source) item.source = String(x.source).slice(0, 200);
+                if (x.status) item.status = String(x.status).slice(0, 20);
+                if (x.progress != null) item.progress = Math.max(0, Math.min(100, Number(x.progress) || 0));
+                if (x.deadline) item.deadline = String(x.deadline).slice(0, 10);
+                if (x.pinned) item.pinned = true;
+                return item;
+              });
+          });
+          if (Array.isArray(data.activity)) {
+            clean.activity = data.activity.filter(function (a) { return a && a.title; }).slice(0, 50)
+              .map(function (a) { return { id: NB.uid(), kind: String(a.kind || "note"), title: String(a.title).slice(0, 300), createdAt: Number(a.createdAt) || Date.now() }; });
+          }
+          var total = clean.notes.length + clean.ideas.length + clean.goals.length + clean.knowledge.length;
+          if (!total) { toast("Import failed: no valid items found in that file.", "err"); return; }
+          NB.setStore(clean);
+          toast("Imported " + total + " memories.");
+          rerender();
+        } catch (err) {
+          toast("Import failed: not a valid JSON file.", "err");
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
     });
     $("#set-reset", root).addEventListener("click", function () { resetDemo(); toast("Demo data restored."); rerender(); });
     $("#set-clear", root).addEventListener("click", function () { clearAll(); toast("All memories erased."); rerender(); });
@@ -93,8 +130,19 @@
   /* ============================================================
      MODALS: Credits / Live / NeuroVision
      ============================================================ */
+  NB.exportJSON = function () {
+    var blob = new Blob([JSON.stringify(getStore(), null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "neurobot-brain.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Brain exported as JSON.");
+  };
+
   NB.openCredits = function () {
-    var modal = openModal({ subtitle: "$ neurobot credits --show" });
+    var modal = openModal({ subtitle: "$ neurobot credits --show", title: "Credits" });
     modal.body.innerHTML =
       '<div style="text-align:center">' +
         '<div class="credits-brand"><span class="logo-mark big">▚</span>' +
@@ -113,7 +161,7 @@
   };
 
   NB.openLive = function () {
-    var modal = openModal({ subtitle: "$ neurobot live --voice" });
+    var modal = openModal({ subtitle: "$ neurobot live --voice", title: "NeuroBot Live" });
     var bars = [];
     for (var i = 0; i < 7; i++) bars.push('<i style="animation-delay:' + (i * 0.12).toFixed(2) + 's"></i>');
     modal.body.innerHTML =
@@ -129,7 +177,7 @@
   };
 
   NB.openNeuroVision = function () {
-    var modal = openModal({ subtitle: "$ neurobot vision --screen" });
+    var modal = openModal({ subtitle: "$ neurobot vision --screen", title: "NeuroVision" });
     modal.body.innerHTML =
       '<div style="text-align:center;padding:1rem 0">' +
         '<div class="mic-visual"><div class="mic-ring"><div class="mic-core">◎</div></div></div>' +

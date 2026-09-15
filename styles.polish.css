@@ -1,0 +1,41 @@
+/* NeuroBot — polish layer (loaded after styles.css).
+   Shortcuts modal, empty-state CTAs, kanban drag states, palette nav. */
+
+/* ── modal heading (title next to subtitle) ── */
+.modal-heading { font-weight: 700; font-size: 14.5px; margin-left: 6px; }
+.modal-head { gap: 8px; }
+.modal-head .term-dots { flex: none; }
+.modal-head .modal-close { margin-left: auto; }
+
+/* ── keyboard shortcuts modal ── */
+.shortcuts-list { display: flex; flex-direction: column; }
+.sc-row {
+  display: flex; align-items: center; gap: 14px; padding: 9px 4px;
+  border-bottom: 1px dashed var(--border); font-size: 12.5px;
+}
+.sc-row:last-child { border-bottom: none; }
+.sc-keys { flex: none; min-width: 130px; }
+.sc-keys kbd { font-size: 11px; padding: 3px 8px; }
+.sc-desc { color: var(--muted); }
+
+/* ── empty states with CTAs ── */
+.empty-ico { display: block; font-size: 26px; margin-bottom: 8px; color: var(--faint); }
+.empty-cta { display: flex; gap: 9px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+
+/* ── kanban drag & drop ── */
+.kanban-col.drop-hover { border-color: rgba(124,156,255,.55); background: rgba(124,156,255,.06); box-shadow: inset 0 0 0 1px rgba(124,156,255,.35); }
+.mem-card.dragging { opacity: 0.45; transform: scale(0.98) rotate(-1deg); cursor: grabbing; }
+.mem-card[draggable="true"] { cursor: grab; }
+
+/* ── ask modal: disabled send button ── */
+.btn[disabled] { opacity: 0.55; cursor: not-allowed; transform: none !important; }
+.ask-modal .muted-xs { margin-left: 6px; }
+
+/* ── palette selected state (keyboard navigation) ── */
+.cmdk-item.sel { background: rgba(124,156,255,.14); box-shadow: inset 2px 0 0 var(--accent); }
+.cmdk .pill-kbd kbd { font-size: 9.5px; padding: 2px 5px; }
+
+/* ── terminal: selection & scrollbar ── */
+.term-out ::selection { background: rgba(124,156,255,.4); }
+.term-out::-webkit-scrollbar { width: 8px; }
+.term-out::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; }

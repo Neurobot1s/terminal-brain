@@ -1,5 +1,6 @@
 /* NeuroBot — main.js (classic script).
-   Hash router, shell wiring, command palette (Ctrl+K), credit popup. */
+   Hash router, shell wiring, command palette (Ctrl+K, arrow keys + Enter),
+   keyboard shortcuts (?), credit popup, status-bar clock. */
 (function () {
   "use strict";
   if (!window.NB) return;
@@ -71,38 +72,55 @@
     var wrap = el(
       '<div class="cmdk-backdrop open"><div class="cmdk" role="dialog" aria-label="Command palette">' +
         '<div class="cmdk-head"><span class="cmdk-spark">✦</span>' +
-        '<input id="cmdk-q" placeholder="Search memories or jump to a page…" autocomplete="off" />' +
-        '<span class="pill-kbd"><kbd>esc</kbd></span></div>' +
+        '<input id="cmdk-q" placeholder="Search memories, jump to a page, run a command…" autocomplete="off" />' +
+        '<span class="pill-kbd"><kbd>↑↓</kbd><kbd>↵</kbd></span></div>' +
         '<div class="cmdk-list" id="cmdk-list"></div>' +
       "</div></div>"
     );
     root.appendChild(wrap);
     var input = $("#cmdk-q", wrap), list = $("#cmdk-list", wrap);
 
+    var pageEntries = [
+      ["#/brain", "My Brain", "▤"], ["#/notes", "Notes", "✎"], ["#/ideas", "Ideas", "✦"],
+      ["#/knowledge", "Knowledge", "◈"], ["#/goals", "Goals", "◎"], ["#/connections", "Connections", "⌬"],
+      ["#/settings", "Settings", "⚙"],
+    ];
+    var actions = [
+      { id: "terminal", label: "Open Terminal", ico: "›_", run: function () { if (NB.openTerminal) NB.openTerminal(); } },
+      { id: "note", label: "New Note", ico: "✎", run: function () { NB.openCapture("note"); } },
+      { id: "idea", label: "New Idea", ico: "✦", run: function () { NB.openCapture("idea"); } },
+      { id: "goal", label: "New Goal", ico: "◎", run: function () { NB.openCapture("goal"); } },
+      { id: "knowledge", label: "Save Thought", ico: "◈", run: function () { NB.openCapture("knowledge"); } },
+      { id: "ask", label: "Ask your brain (Gemini)", ico: "✦", run: function () { if (NB.openAskModal) NB.openAskModal(); } },
+      { id: "live", label: "NeuroBot Live", ico: "◉", run: function () { if (NB.openLive) NB.openLive(); } },
+      { id: "export", label: "Export brain (JSON)", ico: "⇩", run: function () { if (NB.exportJSON) NB.exportJSON(); } },
+      { id: "shortcuts", label: "Keyboard shortcuts", ico: "⌘", run: function () { openShortcuts(); } },
+    ];
+
+    /* flattened current result set for arrow-key navigation */
+    var current = [];
+
     function pagesFor(q) {
-      var pages = [
-        ["#/brain", "My Brain", "▤"], ["#/notes", "Notes", "✎"], ["#/ideas", "Ideas", "✦"],
-        ["#/knowledge", "Knowledge", "◈"], ["#/goals", "Goals", "◎"], ["#/connections", "Connections", "⌬"],
-        ["#/settings", "Settings", "⚙"],
-      ];
-      return pages.filter(function (p) { return !q || p[1].toLowerCase().indexOf(q) !== -1; })
-        .slice(0, 6)
+      return pageEntries.filter(function (p) { return !q || p[1].toLowerCase().indexOf(q) !== -1; })
         .map(function (p) {
-          return '<a class="cmdk-item" href="' + p[0] + '"><span class="cmdk-ico">' + p[2] + "</span>" + p[1] + '<span class="cmdk-hint">page</span></a>';
-        })
-        .concat(q && "terminal".indexOf(q) !== -1 ? ['<button class="cmdk-item" type="button" data-open-term><span class="cmdk-ico">›_</span>Open Terminal<span class="cmdk-hint">command</span></button>'] : []);
+          return { html: '<a class="cmdk-item" href="' + p[0] + '"><span class="cmdk-ico">' + p[2] + "</span>" + p[1] + '<span class="cmdk-hint">page</span></a>', label: p[1] };
+        });
+    }
+    function actionsFor(q) {
+      return actions.filter(function (a) { return !q || a.label.toLowerCase().indexOf(q) !== -1; })
+        .map(function (a) {
+          return { html: '<button class="cmdk-item" type="button" data-act="' + a.id + '"><span class="cmdk-ico">' + a.ico + "</span>" + a.label + '<span class="cmdk-hint">action</span></button>', label: a.label };
+        });
     }
     function memoriesFor(q) {
       if (!q) return [];
-      var s = getStore();
-      var out = [];
+      var s = getStore(), out = [];
       ["notes", "ideas", "goals", "knowledge"].forEach(function (key) {
         s[key].forEach(function (x) {
           if ((x.title + " " + (x.body || "")).toLowerCase().indexOf(q) !== -1 && out.length < 6) {
             var routeMap = { notes: "#/notes", ideas: "#/ideas", goals: "#/goals", knowledge: "#/knowledge" };
-            out.push('<a class="cmdk-item" href="' + routeMap[key] + '"><span class="cmdk-ico">' +
-              (NB.ITEM_META[x.kind] || NB.ITEM_META.note).icon + "</span>" + esc(x.title) +
-              '<span class="cmdk-hint">' + (NB.ITEM_META[x.kind] || NB.ITEM_META.note).label.toLowerCase() + "</span></a>");
+            var meta = NB.ITEM_META[x.kind] || NB.ITEM_META.note;
+            out.push({ html: '<a class="cmdk-item" href="' + routeMap[key] + '"><span class="cmdk-ico">' + meta.icon + "</span>" + esc(x.title) + '<span class="cmdk-hint">' + meta.label.toLowerCase() + "</span></a>", label: x.title });
           }
         });
       });
@@ -110,17 +128,51 @@
     }
     function render() {
       var q = input.value.toLowerCase().trim();
-      var items = memoriesFor(q).concat(pagesFor(q));
-      list.innerHTML = items.length ? items.join("") : '<div class="cmdk-empty">No matches.</div>';
+      current = memoriesFor(q).concat(actionsFor(q), pagesFor(q));
+      list.innerHTML = current.length ? current.map(function (it, i) {
+        var h = it.html;
+        return i === 0 ? h.replace('class="cmdk-item"', 'class="cmdk-item sel"') : h;
+      }).join("") : '<div class="cmdk-empty">No matches.</div>';
     }
-    function close() { wrap.remove(); document.removeEventListener("keydown", onKey); }
+    function move(dir) {
+      if (!current.length) return;
+      var items = $$(".cmdk-item", list);
+      var idx = items.findIndex(function (n) { return n.classList.contains("sel"); });
+      if (idx === -1) idx = 0;
+      else items[idx].classList.remove("sel");
+      idx = (idx + dir + items.length) % items.length;
+      items[idx].classList.add("sel");
+      items[idx].scrollIntoView({ block: "nearest" });
+    }
+    function pick() {
+      var sel = $(".cmdk-item.sel", list);
+      if (!sel) return;
+      if (sel.hasAttribute("data-act")) {
+        var a = actions.filter(function (x) { return x.id === sel.getAttribute("data-act"); })[0];
+        close();
+        if (a) a.run();
+      } else {
+        var href = sel.getAttribute("href");
+        close();
+        if (href) location.hash = href;
+      }
+    }
+    function close() { wrap.remove(); document.removeEventListener("keydown", onKey); document.removeEventListener("keydown", onListKey); }
     function onKey(e) { if (e.key === "Escape") close(); }
+    function onListKey(e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+      else if (e.key === "Enter") { e.preventDefault(); pick(); }
+    }
 
     input.addEventListener("input", render);
+    input.addEventListener("keydown", onListKey);
     list.addEventListener("click", function (e) {
-      if (e.target.closest("[data-open-term]")) {
+      var btn = e.target.closest("[data-act]");
+      if (btn) {
+        var a = actions.filter(function (x) { return x.id === btn.getAttribute("data-act"); })[0];
         close();
-        if (NB.openTerminal) NB.openTerminal();
+        if (a) a.run();
         return;
       }
       if (e.target.closest(".cmdk-item")) close();
@@ -131,7 +183,43 @@
     setTimeout(function () { input.focus(); }, 30);
   }
 
+  /* ---------- keyboard shortcuts modal ---------- */
+  function openShortcuts() {
+    var modal = NB.openModal({ subtitle: "$ neurobot --shortcuts", title: "Keyboard shortcuts" });
+    var rows = [
+      ["Ctrl / ⌘ + K", "command palette — search everything, run actions"],
+      ["` (backtick) or ~", "open / focus the terminal"],
+      ["g then d", "go to dashboard"],
+      ["g then b", "go to My Brain"],
+      ["g then n", "go to Notes"],
+      ["g then i", "go to Ideas"],
+      ["g then k", "go to Knowledge"],
+      ["g then g", "go to Goals"],
+      ["g then c", "go to Connections"],
+      ["g then s", "go to Settings"],
+      ["N", "new note"],
+      ["I", "new idea"],
+      ["G", "new goal"],
+      ["?", "this shortcut list"],
+      ["Esc", "close any modal or palette"],
+    ];
+    modal.body.innerHTML =
+      '<div class="shortcuts-list">' +
+      rows.map(function (r) {
+        return '<div class="sc-row"><span class="sc-keys"><kbd>' + esc(r[0]) + "</kbd></span>" +
+          '<span class="sc-desc">' + esc(r[1]) + "</span></div>";
+      }).join("") +
+      "</div>";
+  }
+
   /* ---------- shell wiring ---------- */
+  var gPending = false;
+  var GOTO = { d: "#/", b: "#/brain", n: "#/notes", i: "#/ideas", k: "#/knowledge", g: "#/goals", c: "#/connections", s: "#/settings" };
+
+  function anyModalOpen() {
+    return $("#modal-root").childElementCount > 0 || $("#cmdk-root").childElementCount > 0 || $("#term-root").childElementCount > 0;
+  }
+
   function wireShell() {
     $("#menu-btn").addEventListener("click", function () {
       document.querySelector(".app").classList.add("side-open");
@@ -158,17 +246,25 @@
 
     document.addEventListener("keydown", function (e) {
       var tag = (e.target && e.target.tagName || "").toLowerCase();
-      var typing = tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable);
+      var typing = tag === "input" || tag === "textarea" || tag === "select" || (e.target && e.target.isContentEditable);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         openPalette();
-      } else if (e.key === "`" && !typing) {
-        e.preventDefault();
-        if (NB.openTerminal) NB.openTerminal();
-      } else if (e.key === "~" && !typing) {
-        e.preventDefault();
-        if (NB.openTerminal) NB.openTerminal();
+        return;
       }
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || anyModalOpen()) return;
+
+      if (gPending) {
+        gPending = false;
+        var dest = GOTO[e.key.toLowerCase()];
+        if (dest) { e.preventDefault(); location.hash = dest; return; }
+      }
+      if (e.key === "g" || e.key === "G") { gPending = true; setTimeout(function () { gPending = false; }, 1200); return; }
+      if (e.key === "n" || e.key === "N") { e.preventDefault(); if (NB.openCapture) NB.openCapture("note"); return; }
+      if (e.key === "i" || e.key === "I") { e.preventDefault(); if (NB.openCapture) NB.openCapture("idea"); return; }
+      if (e.key === "G") { e.preventDefault(); if (NB.openCapture) NB.openCapture("goal"); return; }
+      if (e.key === "`" || e.key === "~") { e.preventDefault(); if (NB.openTerminal) NB.openTerminal(); return; }
+      if (e.key === "?") { e.preventDefault(); openShortcuts(); return; }
     });
   }
 

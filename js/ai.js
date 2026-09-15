@@ -66,7 +66,7 @@
     var modal = NB.openModal({ subtitle: "$ neurobot ask --gemini", title: "Ask your brain" });
     modal.body.innerHTML =
       '<div class="ask-modal">' +
-        '<p class="muted-sm">Gemini answers using your ' + NB.totalItems() + ' memories as context.</p>' +
+        '<p class="muted-sm">Gemini answers using your ' + NB.totalItems() + ' memories as context. <span class="muted-xs">Ctrl+Enter to send</span></p>' +
         '<textarea id="ask-q" rows="3" placeholder="e.g. Summarize what I\'ve captured about AI…">' + NB.esc(preFill || "") + "</textarea>" +
         '<div class="form-actions">' +
           '<button class="btn btn-outline btn-sm" data-cancel>Cancel</button>' +
@@ -75,17 +75,28 @@
         '<div id="ask-out" class="ask-out" style="display:none"></div>' +
       "</div>";
     modal.body.querySelector("[data-cancel]").addEventListener("click", modal.close);
-    modal.body.querySelector("#ask-go").addEventListener("click", function () {
+    function runAsk() {
       var q = modal.body.querySelector("#ask-q").value.trim();
       if (!q) return;
+      var go = modal.body.querySelector("#ask-go");
+      go.disabled = true;
+      go.textContent = "✦ Thinking…";
       var out = modal.body.querySelector("#ask-out");
       out.style.display = "block";
       out.innerHTML = '<div class="ask-loading">✦ Thinking with ' + NB.totalItems() + " memories…</div>";
       NB.askGemini(q).then(function (answer) {
+        go.disabled = false;
+        go.textContent = "✦ Ask Gemini";
         out.innerHTML = '<div class="ask-answer">' + NB.esc(answer) + "</div>";
       }).catch(function (err) {
+        go.disabled = false;
+        go.textContent = "✦ Ask Gemini";
         out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || "Request failed") + "</div>";
       });
+    }
+    modal.body.querySelector("#ask-go").addEventListener("click", runAsk);
+    modal.body.querySelector("#ask-q").addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); runAsk(); }
     });
     setTimeout(function () { var t = modal.body.querySelector("#ask-q"); if (t) t.focus(); }, 30);
   };

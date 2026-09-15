@@ -82,7 +82,9 @@
       });
       $("#brain-count", root).textContent = all().length + " memories across your brain";
       var list = $("#brain-list", root);
-      list.innerHTML = items.length ? items.map(card).join("") : '<div class="empty">No memories match. Try another search.</div>';
+      list.innerHTML = items.length ? items.map(card).join("") :
+        '<div class="empty"><span class="empty-ico">◌</span>' + (q || kind !== "all" ? "No memories match. Try another search." : "Your brain is empty — capture your first memory.") +
+        (q || kind !== "all" ? "" : '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="note">＋ New Note</button><button class="btn btn-outline btn-sm" data-empty-capture="idea">＋ New Idea</button></div>') + "</div>";
       wireCards(list, renderList);
     }
     $("#brain-q", root).addEventListener("input", renderList);
@@ -126,8 +128,10 @@
       list.innerHTML = items.length ? items.map(function (n) {
         var m = ITEM_META.note;
         return memShell(n, m.tone, m.icon, n.category, '<p class="mem-body">' + esc(n.body || "") + "</p>");
-      }).join("") : '<div class="empty">No notes yet. Capture your first thought.</div>';
+      }).join("") : '<div class="empty"><span class="empty-ico">✎</span>' + (q || cat !== "all" ? "No notes match your search." : "No notes yet. Capture your first thought.") +
+        (!q && cat === "all" ? '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="note">＋ New Note</button></div>' : "") + "</div>";
       wireCards(list, renderList);
+      $$('[data-empty-capture]', list).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
     }
     $("#notes-q", root).addEventListener("input", renderList);
     $("#notes-cat", root).addEventListener("change", renderList);
@@ -160,8 +164,9 @@
           '<div class="grid-cards">' + items.map(function (k) {
             return memShell(k, tone, "◈", k.source || t, '<p class="mem-body">' + esc(k.body || "") + "</p>");
           }).join("") + "</div></section>";
-      }).join("") : '<div class="empty">No knowledge yet. Save what you learn.</div>';
+      }).join("") : '<div class="empty"><span class="empty-ico">◈</span>No knowledge yet. Save what you learn.<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="knowledge">＋ Add Knowledge</button></div></div>';
       wireCards($("#kn-groups", root), renderList);
+      $$('[data-empty-capture]', $("#kn-groups", root)).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
     }
     $("#kn-add", root).addEventListener("click", function () { openCapture("knowledge"); });
     renderList();
@@ -196,8 +201,10 @@
       var active = s.goals.filter(function (g) { return g.status === "active"; }).length;
       $("#goals-count", root).textContent = active + " active · " + s.goals.length + " total";
       var list = $("#goals-list", root);
-      list.innerHTML = items.length ? items.map(goalCard).join("") : '<div class="empty">No goals here yet.</div>';
+      list.innerHTML = items.length ? items.map(goalCard).join("") : '<div class="empty"><span class="empty-ico">◎</span>' + (q || st !== "all" ? "No goals match your filters." : "No goals yet. Set one and start making progress.") +
+        (!q && st === "all" ? '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="goal">＋ Add Goal</button></div>' : "") + "</div>";
       wireGoalCards(list, renderList);
+      $$('[data-empty-capture]', list).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
     }
     function wireGoalCards(list, renderList) {
       $$("[data-pin]", list).forEach(function (b) {
