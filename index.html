@@ -5,50 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#07090f" />
     <title>NeuroBot — Your Second Brain</title>
-    <meta
-      name="description"
-      content="NeuroBot — your personal second brain. Capture, organize, connect and retrieve your knowledge, ideas and goals."
-    />
+    <meta name="description" content="NeuroBot — your personal second brain. Capture, organize, connect and retrieve your knowledge, ideas and goals." />
     <link rel="icon" href="logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <!-- Global error guard: never show a silent blank page -->
+    <script>
+      window.addEventListener("error", function (e) {
+        var box = document.getElementById("boot-error");
+        if (!box) {
+          box = document.createElement("div");
+          box.id = "boot-error";
+          box.style.cssText =
+            "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#2a1215;color:#fda4af;border:1px solid #7f1d1d;padding:10px 14px;border-radius:10px;font:12px/1.5 monospace;white-space:pre-wrap";
+          (document.body || document.documentElement).appendChild(box);
+        }
+        box.textContent = "⚠ " + (e.message || "Script error") + (e.filename ? "\n" + e.filename + ":" + e.lineno : "");
+      });
+    </script>
   </head>
   <body>
-    <div id="auth-root" class="auth-root hidden"></div>
-
-    <div id="app-root" class="app hidden">
-      <!-- ═══════════════ SIDEBAR ═══════════════ -->
+    <div class="app" id="app">
+      <!-- ================= SIDEBAR ================= -->
       <aside class="sidebar" id="sidebar">
         <div class="side-top">
           <a class="brand" href="#/">
             <span class="logo-mark">▚</span>
-            <span class="brand-text">
-              <strong>NeuroBot</strong>
-              <em>Your Second Brain.</em>
-            </span>
+            <span class="brand-text"><strong>NeuroBot</strong><em>Your Second Brain.</em></span>
           </a>
           <button id="side-collapse" class="icon-btn" title="Collapse sidebar">«</button>
         </div>
-
-        <nav class="nav" id="nav"></nav>
-
+        <nav class="nav" id="nav">
+          <a href="#/"><span class="nav-ico">◉</span><span class="nav-label">Dashboard</span></a>
+          <a href="#/brain"><span class="nav-ico">▤</span><span class="nav-label">My Brain</span></a>
+          <a href="#/notes"><span class="nav-ico">✎</span><span class="nav-label">Notes</span></a>
+          <a href="#/ideas"><span class="nav-ico">✦</span><span class="nav-label">Ideas</span></a>
+          <a href="#/knowledge"><span class="nav-ico">◈</span><span class="nav-label">Knowledge</span></a>
+          <a href="#/goals"><span class="nav-ico">◎</span><span class="nav-label">Goals</span></a>
+          <a href="#/connections"><span class="nav-ico">⌬</span><span class="nav-label">Connections</span></a>
+          <a href="#/settings"><span class="nav-ico">⚙</span><span class="nav-label">Settings</span></a>
+        </nav>
         <div class="side-bottom">
-          <div class="profile-chip" id="profile-chip" title="Account">
-            <span class="avatar" id="avatar">·</span>
-            <span class="profile-meta">
-              <strong id="user-name">…</strong>
-              <em id="user-email">…</em>
-            </span>
+          <div class="profile-chip" id="profile-chip">
+            <span class="avatar">TL</span>
+            <span class="profile-meta"><strong>Tanishq Lalwani</strong><em>local-only brain</em></span>
           </div>
-          <button class="brain-health" id="brain-health" title="Brain health">
+          <div class="brain-health" id="brain-health" title="Brain health">
             <span class="bh-dot" id="bh-dot"></span>
-            <span id="bh-label">Brain health</span>
-          </button>
+            <span id="bh-label">Brain health: warming up</span>
+          </div>
         </div>
       </aside>
 
       <div class="scrim" id="scrim"></div>
 
-      <!-- ═══════════════ MAIN ═══════════════ -->
+      <!-- ================= MAIN ================= -->
       <div class="main">
         <header class="topbar">
           <button id="menu-btn" class="icon-btn only-mobile" aria-label="Menu">☰</button>
@@ -64,7 +77,6 @@
         </header>
 
         <main id="view" class="view"></main>
-
         <footer class="app-footer">Crafted by <strong>Tanishq Lalwani</strong> · NeuroBot — Your Second Brain.</footer>
       </div>
     </div>
@@ -74,6 +86,25 @@
     <div id="cmdk-root"></div>
     <div id="toast-root"></div>
 
-    <script type="module" src="js/main.js"></script>
+    <!-- Classic scripts, dependency order — works on file:// and any static host -->
+    <script src="js/core.js"></script>
+    <script src="js/core-part2.js"></script>
+    <script src="js/prefs.js"></script>
+    <script src="js/ai.js"></script>
+    <script src="js/views-dashboard.js"></script>
+    <script src="js/views-collections.js"></script>
+    <script src="js/views-kanban.js"></script>
+    <script src="js/views-misc.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+      // Watchdog: if the router never booted, say so instead of a blank page.
+      setTimeout(function () {
+        var v = document.getElementById("view");
+        if (v && !v.childElementCount && !document.getElementById("boot-error")) {
+          v.innerHTML =
+            '<div style="padding:2rem;text-align:center;color:#94a3b8;font:14px monospace">⚠ App did not boot. Open the browser console (F12) and check that all files in <b>js/</b> loaded.</div>';
+        }
+      }, 2500);
+    </script>
   </body>
 </html>

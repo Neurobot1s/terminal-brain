@@ -1,24 +1,27 @@
-/* NeuroBot — prefs.js — appearance/notification preferences (localStorage). */
+/* NeuroBot — prefs.js (classic script; extends window.NB). */
+(function () {
+  "use strict";
+  if (!window.NB) return;
 
-const PREFS_KEY = "neurobot.v1.prefs";
+  var PREFS_KEY = "neurobot.v1.prefs";
+  var DEFAULTS = { compact: false, reduceMotion: false, theme: "dark", remind: false, digest: false };
 
-const DEFAULTS = { compact: false, reduceMotion: false, theme: "dark", remind: false, digest: false };
+  NB.loadPrefs = function () {
+    try {
+      return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}"));
+    } catch (e) {
+      return Object.assign({}, DEFAULTS);
+    }
+  };
 
-export function loadPrefs() {
-  try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") };
-  } catch (e) {
-    return { ...DEFAULTS };
-  }
-}
+  NB.savePrefs = function (p) {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    NB.applyPrefs(p);
+  };
 
-export function savePrefs(p) {
-  localStorage.setItem(PREFS_KEY, JSON.stringify(p));
-  applyPrefs(p);
-}
-
-export function applyPrefs(p) {
-  document.body.classList.toggle("compact", !!p.compact);
-  document.body.classList.toggle("reduce-motion", !!p.reduceMotion);
-  document.body.dataset.theme = p.theme || "dark";
-}
+  NB.applyPrefs = function (p) {
+    document.body.classList.toggle("compact", !!p.compact);
+    document.body.classList.toggle("reduce-motion", !!p.reduceMotion);
+    document.body.setAttribute("data-theme", p.theme || "dark");
+  };
+})();
