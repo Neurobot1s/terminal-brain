@@ -65,6 +65,8 @@
       <div class="main">
         <header class="topbar">
           <button id="menu-btn" class="icon-btn only-mobile" aria-label="Menu">☰</button>
+          <span class="term-dots topbar-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="topbar-path">~/neurobot <span class="path-sep">·</span> <span id="topbar-route">dashboard</span></span>
           <button id="search-btn" class="search-pill">
             <span class="pill-ico">⌕</span>
             <span class="pill-label">Search your brain…</span>
@@ -77,11 +79,19 @@
         </header>
 
         <main id="view" class="view"></main>
-        <footer class="app-footer">Crafted by <strong>Tanishq Lalwani</strong> · NeuroBot — Your Second Brain.</footer>
+        <footer class="app-footer status-bar">
+          <span class="sb-left"><span class="dollar">$</span> whoami → <strong>tanishq</strong></span>
+          <span class="sb-right">
+            <span class="sb-item">local-only</span>
+            <span class="sb-item">vanilla-js</span>
+            <span class="sb-item" id="sb-time">--:--:--</span>
+          </span>
+        </footer>
       </div>
     </div>
 
     <!-- floating shells -->
+    <div class="scanlines" aria-hidden="true"></div>
     <div id="modal-root"></div>
     <div id="cmdk-root"></div>
     <div id="toast-root"></div>

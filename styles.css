@@ -698,3 +698,125 @@ input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus, select:f
 .cmdk-head input { border-bottom: none; padding: 15px 4px 15px 0; }
 .cmdk-item .cmdk-ico { width: 18px; text-align: center; color: var(--muted); flex: none; }
 .cmdk-item .cmdk-hint { margin-left: auto; font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ═══════════════════════════════════════════════════════════════
+   TERMINAL THEME LAYER — monospace chrome, scanlines, status bar
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+html { font-size: 15px; }
+body, button, input, select, textarea {
+  font-family: var(--mono);
+  letter-spacing: 0.01em;
+}
+body { font-size: 13.5px; }
+
+/* scanline overlay (fixed, non-interactive) */
+.scanlines {
+  position: fixed; inset: 0; z-index: 200; pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(255,255,255,.022) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay; opacity: 0.7;
+}
+
+/* ── topbar: terminal window chrome ── */
+.topbar-dots { margin-right: 2px; }
+.topbar-path {
+  font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.topbar-path .path-sep { color: var(--border-2); margin: 0 2px; }
+.topbar-path #topbar-route { color: var(--accent); }
+@media (max-width: 860px) { .topbar-path { display: none; } }
+
+/* ── status bar footer ── */
+.app-footer.status-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 30px; border-top: 1px solid var(--border);
+  background: rgba(8, 11, 18, 0.85); backdrop-filter: blur(10px);
+  font-family: var(--mono); font-size: 11px; color: var(--faint);
+  position: sticky; bottom: 0; z-index: 25;
+}
+.status-bar strong { color: var(--muted); font-weight: 600; }
+.sb-right { display: flex; gap: 8px; flex-wrap: wrap; }
+.sb-item {
+  padding: 2px 9px; border-radius: 99px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted); font-size: 10px; letter-spacing: 0.05em;
+}
+@media (max-width: 640px) {
+  .sb-item { display: none; }
+  .sb-item:last-child { display: inline-block; }
+  .status-bar { padding: 8px 14px; }
+}
+
+/* ── brand + nav: prompt styling ── */
+.brand-text strong { font-family: var(--mono); letter-spacing: 0.04em; }
+.brand-text em { font-family: var(--mono); font-size: 10px; font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.logo-mark { font-family: var(--mono); }
+.nav a { font-family: var(--mono); font-size: 12.5px; }
+.nav a::before { content: "›"; color: var(--faint); width: 10px; flex: none; text-align: center; margin-left: -2px; }
+.nav a.active::before { color: var(--accent); }
+
+/* ── headings + hero ── */
+.page-head h1, .hero h1 { font-family: var(--mono); letter-spacing: 0.02em; }
+.hero h1::before { content: "$ "; color: var(--accent); font-weight: 600; }
+.hero-sub::before { content: "✓ "; color: var(--ok); }
+.hero p.hero-sub { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+
+/* ── ask box: command line ── */
+.ask-box { position: relative; }
+.ask-spark::before { content: "guest@neurobot:~$ "; color: var(--accent); font-size: 11.5px; white-space: nowrap; }
+.ask-box input { font-family: var(--mono); font-size: 13px; caret-color: var(--accent-2); }
+@media (max-width: 720px) { .ask-spark::before { display: none; } }
+
+/* ── panels: window look ── */
+.panel { position: relative; }
+.panel-head h3::before { content: "# "; color: var(--accent); font-weight: 600; }
+.panel-link { font-family: var(--mono); }
+
+/* ── cards: terminal blocks ── */
+.mem-card { border-left: 2px solid rgba(124,156,255,.25); }
+.mem-card:hover { border-left-color: var(--accent); }
+.mem-card .mem-kind { font-family: var(--mono); }
+.mem-card .mem-title::before { content: "» "; color: var(--accent-2); font-weight: 700; }
+.mem-card .mem-body { font-family: var(--mono); font-size: 12px; }
+.kanban-col .kanban-head .chip { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.row-btn { font-family: var(--mono); }
+.stat-card .stat-val { font-family: var(--mono); }
+.stat-card .stat-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; }
+.activity-row { font-family: var(--mono); }
+.activity-row .act-time { font-family: var(--mono); }
+
+/* ── buttons ── */
+.btn { font-family: var(--mono); }
+.btn-primary, .btn.primary { letter-spacing: 0.02em; }
+
+/* ── modal: terminal window ── */
+.modal { border-radius: 14px; }
+.modal-head { border-bottom: 1px solid var(--border); padding-bottom: 11px; margin-bottom: 13px; }
+.modal .term-title { color: var(--muted); }
+.ask-modal textarea { font-family: var(--mono); }
+.ask-answer { font-family: var(--mono); font-size: 12.5px; }
+.ask-loading::before { content: "$ gemini --thinking "; color: var(--accent); font-size: 11px; display: block; margin-bottom: 6px; }
+.cmdk { border-radius: 14px; }
+.cmdk-head input { font-family: var(--mono); }
+
+/* ── pills / chips ── */
+.search-pill { font-family: var(--mono); }
+.pill-kbd kbd { font-family: var(--mono); }
+.chip, .sb-item, .tag { font-family: var(--mono); }
+
+/* ── graph label + legend ── */
+.graph-node text { font-family: var(--mono); }
+.hint { font-family: var(--mono); }
+
+/* ── blinking cursor after brain-health label ── */
+#bh-label::after { content: "▍"; color: var(--accent); animation: pulse 1s step-end infinite; margin-left: 3px; }
+
+/* ── btn variant aliases used by views ── */
+.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: #0a0d16; }
+.btn-primary:hover { box-shadow: 0 10px 30px -12px rgba(124, 156, 255, 0.7); }
+.btn-outline { background: transparent; }
+.btn-outline.danger, .btn.danger { color: var(--bad); border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.08); }
+.btn-outline.danger:hover, .btn.danger:hover { background: rgba(248,113,113,.14); }
+.btn-sm { height: 31px; padding: 0 11px; font-size: 12px; border-radius: 9px; }

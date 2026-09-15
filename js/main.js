@@ -17,12 +17,19 @@
     "#/settings": function () { return NB.SettingsView(); },
   };
 
+  var ROUTE_NAMES = {
+    "#/": "dashboard", "#/brain": "my-brain", "#/notes": "notes", "#/ideas": "ideas",
+    "#/knowledge": "knowledge", "#/goals": "goals", "#/connections": "connections", "#/settings": "settings",
+  };
+
   function route() {
     var hash = location.hash || "#/";
     if (!ROUTES[hash]) hash = "#/";
     $$("#nav a").forEach(function (a) {
       a.classList.toggle("active", a.getAttribute("href") === hash);
     });
+    var routeLabel = $("#topbar-route");
+    if (routeLabel) routeLabel.textContent = ROUTE_NAMES[hash] || "dashboard";
     var view = $("#view");
     view.innerHTML = "";
     view.appendChild(ROUTES[hash]());
@@ -159,11 +166,24 @@
   }
 
   /* ---------- boot ---------- */
+  function startClock() {
+    var t = $("#sb-time");
+    if (!t) return;
+    function tick() {
+      var d = new Date();
+      function p(n) { return (n < 10 ? "0" : "") + n; }
+      t.textContent = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+    }
+    tick();
+    setInterval(tick, 1000);
+  }
+
   function boot() {
     if (window.NB.loadPrefs && window.NB.applyPrefs) NB.applyPrefs(NB.loadPrefs());
     wireShell();
     onStoreChange(updateHealth);
     updateHealth();
+    startClock();
     window.addEventListener("hashchange", route);
     if (!location.hash) location.hash = "#/";
     route();
