@@ -2,13 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#07090f" />
     <title>NeuroBot — Your Second Brain</title>
+    <meta
+      name="description"
+      content="NeuroBot — your personal second brain. Capture, organize, connect and retrieve your knowledge, ideas and goals."
+    />
     <link rel="icon" href="logo.svg" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app">
-      <!-- ================= SIDEBAR ================= -->
+    <div id="auth-root" class="auth-root hidden"></div>
+
+    <div id="app-root" class="app hidden">
+      <!-- ═══════════════ SIDEBAR ═══════════════ -->
       <aside class="sidebar" id="sidebar">
         <div class="side-top">
           <a class="brand" href="#/">
@@ -20,26 +28,30 @@
           </a>
           <button id="side-collapse" class="icon-btn" title="Collapse sidebar">«</button>
         </div>
+
         <nav class="nav" id="nav"></nav>
+
         <div class="side-bottom">
-          <div class="profile-chip">
-            <span class="avatar">TL</span>
+          <div class="profile-chip" id="profile-chip" title="Account">
+            <span class="avatar" id="avatar">·</span>
             <span class="profile-meta">
-              <strong>Tanishq Lalwani</strong>
-              <em>Free plan · local-only</em>
+              <strong id="user-name">…</strong>
+              <em id="user-email">…</em>
             </span>
           </div>
-          <div class="brain-health">
+          <button class="brain-health" id="brain-health" title="Brain health">
             <span class="bh-dot" id="bh-dot"></span>
-            <span id="bh-label">Brain health: warming up</span>
-          </div>
+            <span id="bh-label">Brain health</span>
+          </button>
         </div>
       </aside>
 
-      <!-- ================= MAIN ================= -->
+      <div class="scrim" id="scrim"></div>
+
+      <!-- ═══════════════ MAIN ═══════════════ -->
       <div class="main">
         <header class="topbar">
-          <button id="menu-btn" class="icon-btn only-mobile" title="Menu">☰</button>
+          <button id="menu-btn" class="icon-btn only-mobile" aria-label="Menu">☰</button>
           <button id="search-btn" class="search-pill">
             <span class="pill-ico">⌕</span>
             <span class="pill-label">Search your brain…</span>
@@ -52,6 +64,8 @@
         </header>
 
         <main id="view" class="view"></main>
+
+        <footer class="app-footer">Crafted by <strong>Tanishq Lalwani</strong> · NeuroBot — Your Second Brain.</footer>
       </div>
     </div>
 
