@@ -1,0 +1,10 @@
+{
+  // NeuroBot is a pure vanilla JS/CSS/HTML app — there is intentionally no
+  // TypeScript source. This empty project config exists only so the platform's
+  // generic `tsc -b --noEmit` check has a valid tsconfig to run against.
+  // It compiles nothing and is NOT part of the deployed site (skip on htdocs).
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "files": []
+}
