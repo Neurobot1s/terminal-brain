@@ -1,0 +1,130 @@
+/* NeuroBot — styles.perf.css
+   Loaded last: click fx, performance overrides, responsive fixes. */
+
+/* ═══════════════════════════════════════════════════════════════
+   1) CLICK FX — blue paper pop
+   ═══════════════════════════════════════════════════════════════ */
+.paper-pop {
+  position: fixed;
+  z-index: 99990;
+  width: 13px;
+  height: 13px;
+  margin: -7px 0 0 -7px; /* center on the tap point */
+  pointer-events: none;
+  background: linear-gradient(135deg, #9dcdff 0%, #4d8dff 45%, #2f6bff 100%);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(77, 141, 255, 0.35), 0 2px 8px rgba(47, 107, 255, 0.45);
+  /* the "folded paper" corner */
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 62% 100%, 0 100%);
+  will-change: transform, opacity;
+  animation: paperpop 0.55s cubic-bezier(0.22, 0.9, 0.3, 1) forwards;
+}
+@keyframes paperpop {
+  0%   { transform: scale(0.2) rotate(0deg); opacity: 1; }
+  35%  { transform: scale(1.15) rotate(var(--pp-r, 20deg)); opacity: 1; }
+  100% { transform: translate(var(--pp-dx, 0px), calc(var(--pp-d, 44px) * -1)) scale(0.35) rotate(var(--pp-dr, 180deg)); opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   2) PERFORMANCE — kill the lag sources
+   ═══════════════════════════════════════════════════════════════ */
+/* Biggest GPU cost first: no more backdrop blurs anywhere.
+   Panels keep their glass look via solid rgba fills instead. */
+* { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* Scanlines forced a full-screen repaint layer every frame → drop them. */
+.scanlines { display: none !important; }
+
+/* Cap decorative animation work */
+.graph-edge { animation-duration: 5s; } /* was 2.6s — half the repaints */
+@keyframes edgeflow { to { stroke-dashoffset: -24; } }
+
+/* Cheaper, less layout-thrashy hover states on cards */
+.card, .mem-card, .panel, .stat-card, .kanban-col {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   3) RESPONSIVE FIXES — tablet + phone spacing & grids
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Phones */
+@media (max-width: 640px) {
+  .view { padding: 16px 14px 56px; }          /* bottom padding clears the status bar */
+  .page-head h1 { font-size: 21px; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kanban { grid-template-columns: 1fr 1fr; gap: 10px; } /* 2-up board instead of crushed 4 */
+  .kanban-col { min-height: 0; }
+  .grid-cards { grid-template-columns: 1fr; gap: 10px; }
+  .quick-capture { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .conn-grid { grid-template-columns: 1fr; }
+  .side-panel { order: 2; }
+  .field-row { grid-template-columns: 1fr; }
+  .form-actions { flex-wrap: wrap; }
+  .modal-backdrop { padding: 12px; }
+  .modal { padding: 20px 16px; }
+  .hero { padding: 18px 0 14px; }
+  .hero h1 { font-size: 22px; }
+  .ask-box { padding: 10px; }
+  .pinned-grid { grid-template-columns: 1fr; }
+  .top-actions { gap: 6px; }
+  .live-btn { padding: 0 10px; font-size: 12px; }
+  .topbar { gap: 8px; }
+}
+
+/* Small phones */
+@media (max-width: 400px) {
+  .view { padding: 14px 10px 56px; }
+  .stat-grid { gap: 8px; }
+  .kanban { grid-template-columns: 1fr; }
+}
+
+/* Tablets & small laptops — the missing middle breakpoint */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .view { padding: 22px 22px 54px; }
+  .stat-grid { grid-template-columns: repeat(4, 1fr); }
+  .grid-cards { grid-template-columns: repeat(2, 1fr); }
+  .conn-grid { grid-template-columns: 1.4fr 1fr; }
+  .quick-capture { grid-template-columns: repeat(2, 1fr); }
+  .hero h1 { font-size: 26px; }
+}
+
+/* Laptops — keep 4 stat cards per row instead of 5 cramped ones */
+@media (min-width: 1025px) and (max-width: 1220px) {
+  .stat-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* Very wide screens: stop stretching */
+@media (min-width: 1600px) {
+  .view { max-width: 1320px; }
+}
+
+/* ── Settings AI panel ── */
+.key-preview {
+  font-family: var(--mono); font-size: 11px; color: var(--accent-2);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px;
+}
+.ai-key-row { display: flex; gap: 8px; margin-top: 9px; }
+.ai-key-row .key-input {
+  flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; color: var(--text);
+}
+.ai-key-row .key-input:focus { outline: none; border-color: rgba(124, 156, 255, 0.55); }
+.ai-test-out { font-family: var(--mono); font-size: 11.5px; margin-top: 8px; line-height: 1.5; min-height: 1em; }
+.ai-test-out.ok { color: var(--ok); }
+.ai-test-out.err { color: #fda4af; }
+.ai-test-out.pending { color: var(--muted); }
+
+/* ask modal answer/error blocks (used by ai.js) */
+.ask-out { margin-top: 12px; }
+.ask-answer {
+  background: rgba(124, 156, 255, 0.07); border: 1px solid rgba(124, 156, 255, 0.25);
+  border-radius: 10px; padding: 11px 13px; font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+}
+.ask-error { background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.3); border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: #fda4af; white-space: pre-wrap; }
+.ask-loading { color: var(--muted); font-family: var(--mono); font-size: 12px; animation: blink 1.1s steps(2) infinite; }
+
+/* Reduced motion also kills the click pop (belt & braces with JS check) */
+@media (prefers-reduced-motion: reduce) {
+  .paper-pop { animation-duration: 0.01ms; }
+}

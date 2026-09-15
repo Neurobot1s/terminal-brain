@@ -1,25 +1,27 @@
 /* ============================================================
    NeuroBot — ai.js (classic script; extends window.NB)
-   Gemini integration. Auth-key compatible (AQ. / AIza both work).
-   Key priority: localStorage override → hardcoded fallback.
+   AI backend: same-origin ai.php proxy → NVIDIA NIM (nemotron).
+   - On http(s): calls ai.php (key stays server-side, no CORS).
+   - On file:// (PHP unavailable): calls NVIDIA directly; note the
+     browser may block that — use the hosted site for full AI.
+   - Optional key override (localStorage) is forwarded to the proxy
+     via X-NB-Key for `key <key>` / Settings → AI Connection.
    ============================================================ */
 (function () {
   "use strict";
   if (!window.NB) return;
 
-  var GEMINI_KEY = "AQ.Ab8RN6JvNBW1MK9_Hv41sCU7IjDuDr3MGnrWIVRGEDAACSSiQQ";
-  var KEY_STORE = "nb_gemini_key";
-  var ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/";
-  var MODELS = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash"];
+  var KEY_STORE = "nb_gemini_key"; /* kept for backward compat with settings/terminal */
+  var MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+  var isFile = location.protocol === "file:";
   var callCount = 0, lastError = "";
 
   NB.getGeminiKey = function () {
-    try { return localStorage.getItem(KEY_STORE) || GEMINI_KEY; } catch (e) { return GEMINI_KEY; }
+    try { return localStorage.getItem(KEY_STORE) || ""; } catch (e) { return ""; }
   };
   NB.setGeminiKey = function (k) {
     k = String(k || "").trim();
-    if (!k) return false;
-    try { localStorage.setItem(KEY_STORE, k); } catch (e) {}
+    try { if (k) localStorage.setItem(KEY_STORE, k); else localStorage.removeItem(KEY_STORE); } catch (e) {}
     callCount = 0; lastError = "";
     return true;
   };
@@ -34,63 +36,76 @@
     return lines.join("\n");
   }
 
-  function buildPrompt(q) {
+  function messagesFor(q) {
     return [
-      "You are NeuroBot, a personal second-brain assistant.",
-      "Answer the user's question using ONLY the memories below.",
-      "If the memories do not contain the answer, say so briefly and offer what is closest.",
-      "Be concise (max ~120 words). Plain text only.",
-      "",
-      "MEMORIES (" + NB.totalItems() + " items):",
-      brainContext(),
-      "",
-      "QUESTION: " + q,
-    ].join("\n");
+      {
+        role: "system",
+        content:
+          "You are NeuroBot, a personal second-brain assistant. " +
+          "Answer ONLY from the memories provided by the user. " +
+          "If they don't contain the answer, say so briefly and offer what is closest. " +
+          "Be concise (max ~100 words). Plain text only, no markdown formatting.",
+      },
+      { role: "user", content: "MEMORIES (" + NB.totalItems() + " items):\n" + brainContext() + "\n\nQUESTION: " + q },
+    ];
   }
 
-  function post(model, body) {
+  function postAI(messages, maxTokens) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 15000) : null;
-    return fetch(ENDPOINT + model + ":generateContent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": NB.getGeminiKey() },
-      body: body,
-      signal: ctrl ? ctrl.signal : undefined,
-    }).then(function (res) {
-      if (timer) clearTimeout(timer);
-      return res.json().then(function (data) {
-        return { ok: res.ok, status: res.status, data: data };
-      }, function () {
-        return { ok: res.ok, status: res.status, data: null };
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 45000) : null;
+    var url = isFile ? "https://integrate.api.nvidia.com/v1/chat/completions" : "ai.php";
+    var headers = { "Content-Type": "application/json" };
+    var userKey = NB.getGeminiKey();
+    if (!isFile && userKey) headers["X-NB-Key"] = userKey;
+    if (isFile) headers["Authorization"] = "Bearer " + (userKey || "MISSING");
+    var body = isFile
+      ? { model: MODEL, messages: messages, max_tokens: maxTokens || 900, temperature: 0.6, top_p: 0.95, stream: false }
+      : { messages: messages, max_tokens: maxTokens || 900, temperature: 0.6 };
+    return fetch(url, { method: "POST", headers: headers, body: JSON.stringify(body), signal: ctrl ? ctrl.signal : undefined })
+      .then(function (res) {
+        if (timer) clearTimeout(timer);
+        return res.json().then(
+          function (data) { return { ok: res.ok, status: res.status, data: data }; },
+          function () { return { ok: res.ok, status: res.status, data: null }; }
+        );
+      })
+      .catch(function () {
+        if (timer) clearTimeout(timer);
+        var err = new Error(
+          isFile
+            ? "Network/CORS blocked — AI needs the hosted site (PHP) to work. Open neurobot.kesug.com."
+            : "Network error — could not reach ai.php. Check your connection."
+        );
+        err.network = true;
+        throw err;
       });
-    }, function (netErr) {
-      if (timer) clearTimeout(timer);
-      var err = new Error(ctrl && ctrl.signal && ctrl.signal.aborted ? "Request timed out (15s)." : "Network error — check your connection.");
-      err.network = true;
-      throw err;
-    });
   }
 
-  function extractText(data) {
-    var parts = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-    return parts.map(function (p) { return p.text || ""; }).join("").trim();
+  function extractAnswer(data) {
+    var c = data && data.choices && data.choices[0] && data.choices[0].message;
+    if (!c) return "";
+    var text = String(c.content || "").trim();
+    if (!text && c.reasoning_content) {
+      /* fallback: some reasoning models put the answer at the end of reasoning */
+      var rc = String(c.reasoning_content).trim();
+      text = rc.length > 400 ? rc.slice(-400) : rc;
+    }
+    return text.trim();
   }
 
   function apiError(data) {
-    if (data && data.error && data.error.message) return String(data.error.message);
-    return "";
+    return (data && data.error && data.error.message) ? String(data.error.message) : "";
   }
 
-  /* Diagnostic: one live request, full detail. Used by Settings + `aitest`. */
+  /* Diagnostic used by Settings → AI Connection and terminal `aitest`. */
   NB.testGemini = function () {
-    var body = JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with the single word: OK" }] }] });
-    return post("gemini-2.0-flash", body).then(function (r) {
+    return postAI([{ role: "user", content: "Reply with exactly: OK" }], 256).then(function (r) {
       if (r.ok) {
-        var t = extractText(r.data);
+        var t = extractAnswer(r.data);
         lastError = "";
-        return { ok: true, message: t ? "Connection OK — model replied: " + t : "Connection OK." };
+        return { ok: true, message: "AI connection OK — model replied: " + (t || "(empty)") };
       }
-      var msg = apiError(r.data) || ("HTTP " + r.status);
+      var msg = apiError(r.data) || "HTTP " + r.status;
       lastError = msg;
       return { ok: false, message: msg };
     }).catch(function (err) {
@@ -102,48 +117,32 @@
   NB.askGemini = function (question) {
     if (callCount >= 100) return Promise.reject(new Error("Demo limit reached (100 asks per session). Refresh the page to reset."));
     callCount++;
-    var body = JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: buildPrompt(question) }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 256 },
-    });
-    var idx = 0;
-    function attempt(prevMsg) {
-      if (idx >= MODELS.length) {
-        var m = prevMsg || "All models failed — check your connection.";
-        lastError = m;
-        return Promise.reject(new Error(m));
-      }
-      var model = MODELS[idx++];
-      return post(model, body).then(function (r) {
-        if (r.ok) {
-          var text = extractText(r.data);
-          if (text) { lastError = ""; return text; }
-          return attempt(apiError(r.data) || "Empty response from " + model);
-        }
+    return postAI(messagesFor(question), 900).then(function (r) {
+      if (!r.ok) {
         var msg = apiError(r.data) || "HTTP " + r.status;
         lastError = msg;
-        // Auth/key problems will not be fixed by another model — fail fast with the real message.
-        if (r.status === 400 || r.status === 401 || r.status === 403) {
-          return Promise.reject(new Error("Gemini: " + msg));
-        }
-        return attempt(msg);
-      }).catch(function (err) {
-        if (err && err.network) return attempt(err.message);
-        return Promise.reject(err);
-      });
-    }
-    return attempt("");
+        throw new Error("AI: " + msg);
+      }
+      var text = extractAnswer(r.data);
+      if (!text) {
+        lastError = "Empty response";
+        throw new Error("AI returned an empty response — try rephrasing.");
+      }
+      lastError = "";
+      return text;
+    });
   };
 
+  /* Keep the public name for existing callers; ask modal UI unchanged. */
   NB.openAskModal = function (preFill) {
-    var modal = NB.openModal({ subtitle: "$ neurobot ask --gemini", title: "Ask your brain" });
+    var modal = NB.openModal({ subtitle: "$ neurobot ask --ai", title: "Ask your brain" });
     modal.body.innerHTML =
       '<div class="ask-modal">' +
-        '<p class="muted-sm">Gemini answers using your ' + NB.totalItems() + ' memories as context. <span class="muted-xs">Ctrl+Enter to send</span></p>' +
+        '<p class="muted-sm">The AI answers using your ' + NB.totalItems() + ' memories as context. <span class="muted-xs">Ctrl+Enter to send</span></p>' +
         '<textarea id="ask-q" rows="3" placeholder="e.g. Summarize what I\'ve captured about AI…">' + NB.esc(preFill || "") + "</textarea>" +
         '<div class="form-actions">' +
           '<button class="btn btn-outline btn-sm" data-cancel>Cancel</button>' +
-          '<button class="btn btn-primary btn-sm" id="ask-go">✦ Ask Gemini</button>' +
+          '<button class="btn btn-primary btn-sm" id="ask-go">✦ Ask</button>' +
         "</div>" +
         '<div id="ask-out" class="ask-out" style="display:none"></div>' +
       "</div>";
@@ -159,15 +158,12 @@
       out.innerHTML = '<div class="ask-loading">✦ Thinking with ' + NB.totalItems() + " memories…</div>";
       NB.askGemini(q).then(function (answer) {
         go.disabled = false;
-        go.textContent = "✦ Ask Gemini";
+        go.textContent = "✦ Ask";
         out.innerHTML = '<div class="ask-answer">' + NB.esc(answer) + "</div>";
       }).catch(function (err) {
         go.disabled = false;
-        go.textContent = "✦ Ask Gemini";
-        var hint = /API key|invalid|expired|credential|UNAUTHENTICATED/i.test(err.message || "")
-          ? '<div class="muted-xs" style="margin-top:6px">Fix: Settings → AI Connection → paste a fresh key from aistudio.google.com/apikey, or run <code>key &lt;your-key&gt;</code> in the terminal.</div>'
-          : "";
-        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || "Request failed") + "</div>" + hint;
+        go.textContent = "✦ Ask";
+        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || "Request failed") + "</div>";
       });
     }
     modal.body.querySelector("#ask-go").addEventListener("click", runAsk);

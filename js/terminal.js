@@ -9,13 +9,19 @@
 
   /* ---------- tiny Python interpreter (py) ---------- */
   var PY_PREC = { "or": 1, "and": 2, "==": 3, "!=": 3, "<": 3, ">": 3, "<=": 3, ">=": 3, "+": 4, "-": 4, "*": 5, "/": 5, "//": 5, "%": 5, "**": 6 };
+  /* each builtin receives the array of evaluated argument values */
+  function flat(args) { return args.length === 1 && args[0] && typeof args[0] === "object" && args[0].length != null ? args[0] : args; }
   var PY_FUNCS = {
     print: function (args) { return { print: args.map(pyStr).join(" ") }; },
-    len: function (a) { return a.length != null ? a.length : String(a).length; },
-    abs: Math.abs, min: function (a) { return Math.min.apply(null, a); }, max: function (a) { return Math.max.apply(null, a); },
-    round: function (a, n) { var p = n || 0; return Math.round(a * Math.pow(10, p)) / Math.pow(10, p); },
-    int: function (a) { return Math.trunc(Number(a)) || 0; }, float: function (a) { return Number(a) || 0; },
-    str: function (a) { return pyStr(a); }, sum: function (a) { return a.reduce(function (x, y) { return x + y; }, 0); },
+    len: function (args) { var a = args.length === 1 ? args[0] : args; return a != null && a.length != null ? a.length : String(a).length; },
+    abs: function (args) { return Math.abs(args[0]); },
+    min: function (args) { return Math.min.apply(null, flat(args)); },
+    max: function (args) { return Math.max.apply(null, flat(args)); },
+    round: function (args) { var a = args[0], p = args[1] || 0; return Math.round(a * Math.pow(10, p)) / Math.pow(10, p); },
+    int: function (args) { return Math.trunc(Number(args[0])) || 0; },
+    float: function (args) { return Number(args[0]) || 0; },
+    str: function (args) { return pyStr(args[0]); },
+    sum: function (args) { return flat(args).reduce(function (x, y) { return x + y; }, 0); },
   };
   function pyStr(v) {
     if (v === null || v === undefined) return "None";
@@ -43,9 +49,10 @@
       }
       if (/[A-Za-z_]/.test(c)) {
         var w = src.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*/)[0];
+        if (w === "and" || w === "or") { toks.push({ t: "op", v: w }); i += w.length; continue; }
         toks.push({ t: w === "True" || w === "False" || w === "None" ? "num" : "id", v: w === "True" ? true : w === "False" ? false : w === "None" ? null : w }); i += w.length; continue;
       }
-      var three = src.slice(i, i + 2), two = src.slice(i, i + 2);
+      var two = src.slice(i, i + 2);
       if (two === "**" || two === "//" || two === "==" || two === "!=" || two === "<=" || two === ">=") { toks.push({ t: "op", v: two }); i += 2; continue; }
       if ("+-*/%<>=(),:".indexOf(c) !== -1) { toks.push({ t: "op", v: c }); i++; continue; }
       throw new Error("unexpected character '" + c + "'");
@@ -66,6 +73,17 @@
         var op = eat().v;
         var right = op === "**" ? expr(p) : expr(p + 1);
         left = binop(op, left, right);
+      }
+      /* ternary: A if COND else B */
+      var tk2 = peek();
+      if (minP <= 0 && tk2 && tk2.t === "id" && tk2.v === "if") {
+        eat();
+        var cond = expr(0);
+        var nx = peek();
+        if (!nx || nx.t !== "id" || nx.v !== "else") throw new Error("expected 'else' in conditional expression");
+        eat();
+        var alt = expr(0);
+        left = cond ? left : alt;
       }
       return left;
     }
@@ -111,7 +129,7 @@
       }
       throw new Error("unexpected '" + (tk.v || tk.t) + "'");
     }
-    return { expr: expr, done: function () { return pos >= toks.length; } };
+    return { expr: expr, done: function () { return pos >= toks.length; }, peekTok: peek, eatTok: eat };
   }
   function pySplitTop(src) {
     var parts = [], cur = "", depth = 0, q = null;
@@ -147,9 +165,16 @@
       }
       var p3 = pyParse(pyTokenize(line), scope);
       var val = p3.expr(0);
-      if (!p3.done()) throw new Error("unexpected token after expression");
-      if (val && typeof val === "object" && val.print) outs.push(["t-ok", val.print]);
-      else if (val !== undefined && val !== null) outs.push(["t-info", pyStr(val)]);
+      if (p3.peekTok() && p3.peekTok().v === ",") {
+        var items = [val];
+        while (p3.peekTok() && p3.peekTok().v === ",") { p3.eatTok(); items.push(p3.expr(0)); }
+        if (!p3.done()) throw new Error("unexpected token after expression");
+        outs.push(["t-info", "(" + items.map(pyStr).join(", ") + (items.length === 1 ? "," : "") + ")"]);
+      } else {
+        if (!p3.done()) throw new Error("unexpected token after expression");
+        if (val && typeof val === "object" && val.print) outs.push(["t-ok", val.print]);
+        else if (val !== undefined && val !== null) outs.push(["t-info", pyStr(val)]);
+      }
     });
     return outs;
   }
@@ -172,7 +197,7 @@
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
         ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query gemini"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
-        ["key / aitest", "set or test the gemini key"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
+        ["key / aitest", "set or test the AI key"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
       ];
       rows.forEach(function (r) { out.push(["t-cmd", "  " + pad(r[0], 18) + " " + r[1]]); });
@@ -289,20 +314,23 @@
           ["t-info", `  py round(3.14159, 2) , 10 % 3`],
           ["t-dim", "  supported: + - * / // % ** ( ) strings, True/False/None"],
           ["t-dim", "  fns: print, len, int, float, str, round, abs, min, max, sum"],
-          ["t-dim", "  variables persist in this terminal session (x = 5 stays set)"]];
+          ["t-dim", "  variables persist in this terminal session (x = 5 stays set)"],
+          ["t-dim", "  no lists/dicts ([ ]) — pass values directly, e.g. min(3, 1, 2)"]];
       }
       try { return pyExec(src, PY_SCOPE); }
       catch (e) { return [["t-err", "py: " + (e.message || "error")]]; }
     } },
-    key: { desc: "set/view gemini key", run: function (args) {
+    key: { desc: "set/view AI key override", run: function (args) {
       if (!args.length) {
         var k = NB.getGeminiKey();
-        return [["t-info", "current key: " + (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k)], ["t-dim", "  set one:  key <your-api-key>"]];
+        return [["t-info", "custom key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "server default")], ["t-dim", "  set one:  key <your-api-key>   ·   clear:  key clear"]];
       }
-      NB.setGeminiKey(args.join(""));
-      return [["t-ok", "key saved locally — run 'aitest' to verify"]];
+      var v = args.join("");
+      if (v.toLowerCase() === "clear") { NB.setGeminiKey(""); return [["t-ok", "override cleared — using server key"]]; }
+      NB.setGeminiKey(v);
+      return [["t-ok", "key override saved — run 'aitest' to verify"]];
 } },
-    aitest: { desc: "test gemini connection", run: function () {
+    aitest: { desc: "test AI connection", run: function () {
       NB.testGemini().then(function (r) {
         var term = document.querySelector(".term-out");
         if (!term) return;
@@ -312,7 +340,7 @@
         term.appendChild(d);
         term.scrollTop = term.scrollHeight;
       });
-      return [["t-info", "$ gemini --test … pinging gemini-2.0-flash…"]];
+      return [["t-info", "$ ai --test … pinging the model…"]];
     } },
     sudo: { desc: "nice try", run: function () { return [["t-err", "sudo: permission denied — this brain belongs to tanishq 😄"]]; } },
   };

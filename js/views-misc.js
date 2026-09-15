@@ -49,14 +49,14 @@
         '<div class="row-between"><span>Weekly digest (demo)</span><label class="switch"><input type="checkbox" id="set-digest"><span class="slider"></span></label></div>' +
       "</section>" +
       '<section class="panel"><h3>AI Connection</h3>' +
-        '<p class="muted">Gemini answers questions using your memories. Your key is stored only in this browser.</p>' +
-        '<div class="row-between"><span>Current key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
-        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Paste a Gemini API key (AIza… or AQ.…)" autocomplete="off" spellcheck="false" />' +
+        '<p class="muted">The AI answers questions using your memories. The key lives safely on the server (ai.php) — the field below is optional and only used to override it.</p>' +
+        '<div class="row-between"><span>Custom key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
+        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Optional: paste a custom key (nvapi-…)" autocomplete="off" spellcheck="false" />' +
           '<button class="btn btn-primary btn-sm" id="ai-key-save">Save</button></div>' +
         '<div class="ai-key-row"><button class="btn btn-outline btn-sm" id="ai-key-test">Test connection</button>' +
-          '<button class="btn btn-outline btn-sm" id="ai-key-reset">Use default key</button></div>' +
+          '<button class="btn btn-outline btn-sm" id="ai-key-reset">Clear override</button></div>' +
         '<div id="ai-test-out" class="ai-test-out"></div>' +
-        '<p class="muted muted-xs">Need a key? Create a free one at aistudio.google.com/apikey — keys starting with <code>AIza</code> are the most compatible.</p>' +
+        '<p class="muted muted-xs">Runs locally on InfinityFree — no third-party proxy, nothing else leaves your hosting.</p>' +
       '</section>' +
       '<section class="panel"><h3>Data</h3>' +
         '<div class="row-between"><span>Export brain as JSON</span><button class="btn btn-outline btn-sm" id="set-export">Export</button></div>' +
@@ -76,7 +76,7 @@
 
     var prefs = loadPrefs();
     var keyPrev = $("#ai-key-preview", root);
-    function maskKey(k) { return k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k; }
+    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "server default"; }
     keyPrev.textContent = maskKey(NB.getGeminiKey());
     $("#ai-key-save", root).addEventListener("click", function () {
       var v = $("#ai-key-input", root).value.trim();
@@ -96,9 +96,9 @@
       });
     });
     $("#ai-key-reset", root).addEventListener("click", function () {
-      try { localStorage.removeItem("nb_gemini_key"); } catch (e) {}
+      NB.setGeminiKey("");
       keyPrev.textContent = maskKey(NB.getGeminiKey());
-      toast("Reverted to the built-in key.");
+      toast("Using the server key.");
     });
 
     $("#set-density", root).checked = prefs.compact;
