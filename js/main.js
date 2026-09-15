@@ -183,6 +183,24 @@
     setTimeout(function () { input.focus(); }, 30);
   }
 
+  /* ---------- notifications modal ---------- */
+  function openNotifications() {
+    var s = getStore();
+    var modal = NB.openModal({ subtitle: "$ neurobot notifications --feed", title: "Activity" });
+    var acts = s.activity.slice(0, 12);
+    modal.body.innerHTML = acts.length
+      ? '<div class="notif-list">' + acts.map(function (a) {
+          var m = NB.ITEM_META[a.kind] || NB.ITEM_META.note;
+          return '<div class="notif-row"><span class="mem-ico ' + m.tone + '">' + m.icon + "</span>" +
+            '<span class="notif-title">' + esc(a.title) + '</span>' +
+            '<span class="act-time">' + NB.timeAgo(a.createdAt) + "</span></div>";
+        }).join("") + "</div>" +
+        '<div class="form-actions"><button class="btn btn-outline btn-sm" data-goto-brain>Open My Brain →</button></div>'
+      : '<div class="empty"><span class="empty-ico">◔</span>No notifications yet — capture something first.</div>';
+    var gotoBtn = modal.body.querySelector("[data-goto-brain]");
+    if (gotoBtn) gotoBtn.addEventListener("click", function () { modal.close(); location.hash = "#/brain"; });
+  }
+
   /* ---------- keyboard shortcuts modal ---------- */
   function openShortcuts() {
     var modal = NB.openModal({ subtitle: "$ neurobot --shortcuts", title: "Keyboard shortcuts" });
@@ -239,10 +257,7 @@
     var termBtn = $("#term-btn");
     if (termBtn) termBtn.addEventListener("click", function () { if (NB.openTerminal) NB.openTerminal(); });
     $("#live-btn").addEventListener("click", function () { if (NB.openLive) NB.openLive(); });
-    $("#notif-btn").addEventListener("click", function () {
-      var n = getStore().activity.length;
-      if (NB.toast) NB.toast(n ? n + " recent captures in your brain." : "No notifications yet.", "ok");
-    });
+    $("#notif-btn").addEventListener("click", openNotifications);
 
     document.addEventListener("keydown", function (e) {
       var tag = (e.target && e.target.tagName || "").toLowerCase();

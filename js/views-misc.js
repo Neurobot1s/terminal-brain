@@ -23,7 +23,8 @@
           '<p class="muted">When two memories share concepts, NeuroBot will surface them here so you can navigate knowledge as a graph rather than a pile.</p>' +
           '<div class="hint"><p><strong>Legend</strong></p>' +
           '<p><span class="legend-dot hub"></span> hub nodes</p>' +
-          '<p><span class="legend-dot leaf"></span> topic nodes</p></div>' +
+          '<p><span class="legend-dot leaf"></span> topic nodes</p>' +
+          '<p class="legend-note">node size = memories in that area · hover a node for its count</p></div>' +
         "</aside>" +
       "</div></div>");
     renderGraph($("#conn-graph", root), { height: 420 });

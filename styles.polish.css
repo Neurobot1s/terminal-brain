@@ -39,3 +39,35 @@
 .term-out ::selection { background: rgba(124,156,255,.4); }
 .term-out::-webkit-scrollbar { width: 8px; }
 .term-out::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 99px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   ROUND 2 — graph pulse, pinned row, notifications
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── graph: animated edge flow + node tooltips ── */
+.graph-edge {
+  stroke-dasharray: 5 7;
+  animation: edgeflow 2.6s linear infinite;
+}
+@keyframes edgeflow { to { stroke-dashoffset: -24; } }
+.graph-node title { pointer-events: none; }
+
+/* ── dashboard pinned memories ── */
+#pinned-panel { margin-bottom: 14px; }
+.pinned-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.pinned-grid .mem-card { cursor: pointer; }
+a.mem-card { text-decoration: none; color: inherit; }
+
+/* ── notifications modal ── */
+.notif-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.notif-row {
+  display: flex; align-items: center; gap: 11px; padding: 9px 8px;
+  border-radius: var(--radius-sm); transition: background 0.14s var(--ease);
+}
+.notif-row:hover { background: var(--panel-2); }
+.notif-row .mem-ico { width: 26px; height: 26px; font-size: 12px; }
+.notif-title { flex: 1; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend-note { margin-top: 8px; font-size: 10.5px; color: var(--faint); }
+
+/* ── terminal ascii bars ── */
+.term-line.t-cmd { white-space: pre; }

@@ -215,7 +215,12 @@
           var id = b.getAttribute("data-goal-goal") || b.getAttribute("data-goal-progress");
           var delta = Number(b.getAttribute("data-delta")) || 0;
           var g = getStore().goals.find(function (x) { return x.id === id; });
-          if (g) updateGoal(id, { progress: Math.max(0, Math.min(100, (g.progress || 0) + delta)) });
+          if (!g) return;
+          var next = Math.max(0, Math.min(100, (g.progress || 0) + delta));
+          var patch = { progress: next };
+          if (next === 100 && g.status === "active") { patch.status = "completed"; toast("🎉 Goal complete: " + g.title, "ok"); }
+          if (next < 100 && g.status === "completed") patch.status = "active";
+          updateGoal(id, patch);
           renderList();
         });
       });

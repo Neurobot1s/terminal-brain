@@ -249,28 +249,46 @@
     opts = opts || {};
     var W = 800, H = opts.height || 320;
     var nodes = [
-      { id: "ai", label: "Artificial Intelligence", x: 50, y: 30, hub: true },
-      { id: "ml", label: "Machine Learning", x: 27, y: 52 },
-      { id: "prog", label: "Programming", x: 74, y: 50 },
-      { id: "nb", label: "NeuroBot", x: 50, y: 74, hub: true },
-      { id: "ent", label: "Entrepreneurship", x: 20, y: 22 },
-      { id: "edu", label: "Education", x: 82, y: 20 },
+      { id: "ai", label: "Artificial Intelligence", x: 50, y: 30, hub: true, match: ["AI"] },
+      { id: "ml", label: "Machine Learning", x: 27, y: 52, match: ["AI", "Science"] },
+      { id: "prog", label: "Programming", x: 74, y: 50, match: ["Programming", "Engineering"] },
+      { id: "nb", label: "NeuroBot", x: 50, y: 74, hub: true, match: ["Product", "General"] },
+      { id: "ent", label: "Entrepreneurship", x: 20, y: 22, match: ["Business"] },
+      { id: "edu", label: "Education", x: 82, y: 20, match: ["Education", "Learning", "Psychology"] },
     ];
     var edges = [["ai","ml"],["ai","prog"],["ai","ent"],["ai","edu"],["ai","nb"],["ml","prog"],["ml","nb"],["prog","nb"],["edu","prog"],["ent","ml"]];
+
+    /* size nodes by how many real memories map to each topic */
+    var s = NB.getStore();
+    var counts = {};
+    function tally(key) { if (key) counts[key] = (counts[key] || 0) + 1; }
+    s.notes.forEach(function (n) { tally(n.category); });
+    s.ideas.forEach(function (i) { tally(i.category); });
+    s.goals.forEach(function (g) { tally(g.category); });
+    s.knowledge.forEach(function (k) { tally(k.topic); });
+    nodes.forEach(function (n) {
+      n.weight = n.match.reduce(function (acc, key) { return acc + (counts[key] || 0); }, 0);
+    });
+    var maxW = Math.max.apply(null, nodes.map(function (n) { return n.weight; }).concat([1]));
+
     var px = function (n) { return (n.x / 100) * W; };
     var py = function (n) { return (n.y / 100) * H; };
-    var edgesSvg = edges.map(function (e) {
+    var edgesSvg = edges.map(function (e, i) {
       var A = nodes.filter(function (n) { return n.id === e[0]; })[0];
       var B = nodes.filter(function (n) { return n.id === e[1]; })[0];
       var x1 = px(A), y1 = py(A), x2 = px(B), y2 = py(B);
       var mx = (x1 + x2) / 2 + (y2 - y1) * 0.18;
       var my = (y1 + y2) / 2 - (x2 - x1) * 0.18;
-      return '<path class="graph-edge" d="M ' + x1 + " " + y1 + " Q " + mx + " " + my + " " + x2 + " " + y2 + '" />';
+      return '<path class="graph-edge" style="animation-delay:' + (i * 0.18).toFixed(2) + 's" d="M ' + x1 + " " + y1 + " Q " + mx + " " + my + " " + x2 + " " + y2 + '" />';
     }).join("");
     var nodesSvg = nodes.map(function (n) {
-      var r = n.hub ? 26 : 17, fs = n.hub ? 10.5 : 9;
+      var scale = 0.7 + 0.6 * (n.weight / maxW);
+      var r = Math.round((n.hub ? 26 : 17) * scale);
+      var fs = n.hub ? 10.5 : 9;
+      var tip = n.label + " — " + n.weight + " " + (n.weight === 1 ? "memory" : "memories");
       return (
         '<g class="graph-node ' + (n.hub ? "hub" : "") + '" transform="translate(' + px(n) + "," + py(n) + ')">' +
+          '<title>' + esc(tip) + "</title>" +
           '<circle r="' + r + '" />' +
           '<text text-anchor="middle" y="' + (r + fs + 3) + '" font-size="' + fs + '">' + esc(n.label) + "</text>" +
         "</g>"

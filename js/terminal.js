@@ -36,14 +36,16 @@
     date: { desc: "current time", run: function () { return [["t-info", new Date().toString()]]; } },
     stats: { desc: "brain summary", run: function () {
       var s = getStore();
-      return [
-        ["t-acc", "brain stats"],
-        ["t-info", "  notes      " + s.notes.length],
-        ["t-info", "  ideas      " + s.ideas.length],
-        ["t-info", "  goals      " + s.goals.length],
-        ["t-info", "  knowledge  " + s.knowledge.length],
-        ["t-ok",   "  total      " + totalItems() + " memories"],
-      ];
+      var rows = [["notes", s.notes.length], ["ideas", s.ideas.length], ["goals", s.goals.length], ["knowledge", s.knowledge.length]];
+      var max = Math.max.apply(null, rows.map(function (r) { return r[1]; }).concat([1]));
+      var out = [["t-acc", "brain stats"]];
+      rows.forEach(function (r) {
+        var bar = "";
+        for (var i = 0; i < Math.round((r[1] / max) * 20); i++) bar += "█";
+        out.push(["t-cmd", "  " + pad(r[0], 11) + pad(r[1], 4) + bar]);
+      });
+      out.push(["t-ok", "  " + pad("total", 11) + totalItems() + " memories"]);
+      return out;
     } },
     health: { desc: "brain health", run: function () {
       var n = totalItems();

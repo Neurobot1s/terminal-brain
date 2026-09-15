@@ -70,11 +70,32 @@
             '<button class="btn btn-outline btn-sm" id="nv-try">Try NeuroVision</button></div>' +
         "</section>" +
       "</div>" +
-      '<section class="panel"><div class="panel-head"><h3>Recent activity</h3><span class="muted-xs">last 6</span></div>' +
+      '<section class="panel" id="pinned-panel"><div class="panel-head"><h3>Pinned memories</h3><a class="panel-link" href="#/brain">Open My Brain →</a></div>' +
+        '<div id="pinned-list" class="grid-cards pinned-grid"></div></section>' +
+      '<section class="panel"><div class="panel-head"><h3>Recent activity</h3><a class="panel-link" href="#/brain">view all →</a></div>' +
         '<div id="recent-list"></div></section>' +
       "</div>");
 
     renderGraph($("#dash-graph", root), { height: 300 });
+
+    /* pinned memories row */
+    var pinned = s.notes.concat(s.ideas, s.goals, s.knowledge)
+      .filter(function (x) { return x.pinned; })
+      .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); })
+      .slice(0, 4);
+    var pWrap = $("#pinned-list", root), pPanel = $("#pinned-panel", root);
+    if (!pinned.length) { pPanel.style.display = "none"; }
+    else {
+      pWrap.innerHTML = pinned.map(function (x) {
+        var m = ITEM_META[x.kind] || ITEM_META.note;
+        var body = x.progress != null
+          ? '<div class="progress-track"><div class="progress-fill" style="width:' + x.progress + '%"></div></div>'
+          : '<p class="mem-body">' + esc(x.body || "") + "</p>";
+        return '<a class="mem-card ' + m.tone + '" href="' + (x.kind === "idea" ? "#/ideas" : x.kind === "goal" ? "#/goals" : x.kind === "knowledge" ? "#/knowledge" : "#/notes") + '">' +
+          '<div class="mem-top"><span class="mem-ico ' + m.tone + '">' + m.icon + '</span><span class="mem-kind">' + m.label + '</span><span class="pin-btn on">◆</span></div>' +
+          '<strong class="mem-title">' + esc(x.title) + "</strong>" + body + "</a>";
+      }).join("");
+    }
 
     var acts = s.activity.slice(0, 6);
     var recent = $("#recent-list", root);
