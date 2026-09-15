@@ -1,0 +1,44 @@
+═══════════════════════════════════════════════════════
+ NEUROBOT — DEPLOY CHEAT SHEET (InfinityFree)
+═══════════════════════════════════════════════════════
+
+UPLOAD to htdocs/neurobot.kesug.com/ :
+
+  index.html          (required)
+  ai.php              (required — the AI proxy)
+  .htaccess           (recommended — default doc + cache)
+  logo.svg
+  styles.css
+  styles.polish.css
+  styles.perf.css
+  js/                 (whole folder — all 11 files)
+
+DO NOT UPLOAD:  tests/  README.md  DEPLOY.txt  .git*  .env*
+
+───────────────────────────────────────────────────────
+ AFTER UPLOAD — 3 CHECKS (30 seconds)
+───────────────────────────────────────────────────────
+
+1) Site loads?      https://neurobot.kesug.com/
+   (stale look? Ctrl+Shift+R)
+
+2) AI proxy alive?  https://neurobot.kesug.com/ai.php
+   Should print: {"ok":true,"service":"neurobot ai proxy",...}
+
+3) AI answers?      open site, press ` , type:  aitest
+   Expect: "✓ AI connection OK — model replied: OK"
+
+   First-time "non-JSON page" error?  Reload the site once
+   (InfinityFree security check), then aitest again.
+
+───────────────────────────────────────────────────────
+ KEY FACTS
+───────────────────────────────────────────────────────
+ • API key lives INSIDE ai.php only — never in page source.
+   To swap keys: edit $SERVER_KEY in ai.php. Nothing else.
+ • All data in localStorage on the device. Export/Import
+   in Settings → Data.
+ • Terminal: ` key · help · py 6*7 · ask <question>
+ • Palette: Ctrl+K · Shortcuts: ?
+ • Crafted by TANISHQ LALWANI
+═══════════════════════════════════════════════════════

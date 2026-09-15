@@ -79,6 +79,7 @@ $payload = array(
   "max_tokens" => $maxTokens,
   "temperature" => $temp,
   "top_p" => 0.95,
+  "reasoning_budget" => 256,
   "stream" => false,
 );
 

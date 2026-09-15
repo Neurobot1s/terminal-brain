@@ -59,7 +59,7 @@
     if (!isFile && userKey) headers["X-NB-Key"] = userKey;
     if (isFile) headers["Authorization"] = "Bearer " + (userKey || "MISSING");
     var body = isFile
-      ? { model: MODEL, messages: messages, max_tokens: maxTokens || 900, temperature: 0.6, top_p: 0.95, stream: false }
+      ? { model: MODEL, messages: messages, max_tokens: maxTokens || 900, temperature: 0.6, top_p: 0.95, reasoning_budget: 256, stream: false }
       : { messages: messages, max_tokens: maxTokens || 900, temperature: 0.6 };
     return fetch(url, { method: "POST", headers: headers, body: JSON.stringify(body), signal: ctrl ? ctrl.signal : undefined })
       .then(function (res) {
@@ -81,6 +81,15 @@
       });
   }
 
+  function stripMarkdown(s) {
+    return s
+      .replace(/\*\*([^*]+)\*\*/g, "$1")   /* **bold** */
+      .replace(/\*([^*]+)\*/g, "$1")       /* *italic* */
+      .replace(/`([^`]+)`/g, "$1")          /* `code` */
+      .replace(/^#{1,6}\s+/gm, "")          /* headings */
+      .replace(/^\s*[-*]\s+/gm, "· ")      /* list bullets → · */;
+  }
+
   function extractAnswer(data) {
     var c = data && data.choices && data.choices[0] && data.choices[0].message;
     if (!c) return "";
@@ -90,7 +99,7 @@
       var rc = String(c.reasoning_content).trim();
       text = rc.length > 400 ? rc.slice(-400) : rc;
     }
-    return text.trim();
+    return stripMarkdown(text).trim();
   }
 
   function apiError(data) {
