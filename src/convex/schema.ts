@@ -32,12 +32,72 @@ const schema = defineSchema(
       role: v.optional(roleValidator), // role of the user. do not remove
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
-    // add other tables here
+    // ── NeuroBot second-brain tables (per-user, single user per email) ──
 
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    brainNotes: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      body: v.string(),
+      category: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      pinned: v.optional(v.boolean()),
+    }).index("by_user", ["userId"]),
+
+    brainIdeas: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      body: v.string(),
+      category: v.string(),
+      status: v.union(
+        v.literal("new"),
+        v.literal("exploring"),
+        v.literal("building"),
+        v.literal("completed"),
+      ),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      pinned: v.optional(v.boolean()),
+    }).index("by_user", ["userId"]),
+
+    brainGoals: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      body: v.string(),
+      progress: v.number(),
+      deadline: v.string(),
+      status: v.union(
+        v.literal("active"),
+        v.literal("paused"),
+        v.literal("completed"),
+      ),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      pinned: v.optional(v.boolean()),
+    }).index("by_user", ["userId"]),
+
+    brainKnowledge: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      body: v.string(),
+      topic: v.string(),
+      source: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      pinned: v.optional(v.boolean()),
+    }).index("by_user", ["userId"]),
+
+    brainActivity: defineTable({
+      userId: v.id("users"),
+      kind: v.union(
+        v.literal("note"),
+        v.literal("idea"),
+        v.literal("goal"),
+        v.literal("knowledge"),
+      ),
+      title: v.string(),
+      createdAt: v.number(),
+    }).index("by_user", ["userId"]),
   },
   {
     schemaValidation: false,

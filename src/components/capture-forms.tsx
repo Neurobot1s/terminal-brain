@@ -19,8 +19,8 @@ import {
 } from "@/components/ui/select";
 import { ITEM_META, IDEA_STATUSES, GOAL_STATUSES } from "@/config/kinds";
 import { KNOWLEDGE_TOPICS } from "@/lib/store";
+import type { BrainClientStore } from "@/lib/brainClient";
 import type {
-  BrainStore,
   Goal,
   GoalStatus,
   Idea,
@@ -58,9 +58,13 @@ export interface CaptureModalProps {
   kind: ItemKind;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  store: BrainStore;
+  store: BrainClientStore;
   /** When provided the modal switches to edit mode for this item. */
-  editItem?: BrainStore["notes"][number] | Idea | Goal | KnowledgeItem;
+  editItem?:
+    | BrainClientStore["notes"][number]
+    | Idea
+    | Goal
+    | KnowledgeItem;
 }
 
 /** Generic capture/edit modal used by QuickCapture, pages and the palette. */

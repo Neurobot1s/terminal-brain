@@ -122,8 +122,8 @@ export function NoteCard({
 }: {
   note: Note;
   onEdit?: (note: Note) => void;
-  /** Return an undo callback when deletion is reversible. */
-  onDelete: (note: Note) => (() => void) | void;
+  /** Return an undo callback when deletion is reversible (sync stores). */
+  onDelete: (note: Note) => unknown;
   onTogglePin?: (note: Note) => void;
 }) {
   return (
@@ -160,7 +160,7 @@ export function IdeaCard({
 }: {
   idea: Idea;
   onEdit?: (idea: Idea) => void;
-  onDelete: (idea: Idea) => (() => void) | void;
+  onDelete: (idea: Idea) => unknown;
   onTogglePin?: (idea: Idea) => void;
 }) {
   const tone = IDEA_STATUSES.find((s) => s.value === idea.status)?.tone ?? "gray";
@@ -202,7 +202,7 @@ export function GoalCard({
 }: {
   goal: Goal;
   onEdit?: (goal: Goal) => void;
-  onDelete: (goal: Goal) => (() => void) | void;
+  onDelete: (goal: Goal) => unknown;
   onTogglePin?: (goal: Goal) => void;
 }) {
   const overdue =
@@ -257,7 +257,7 @@ export function KnowledgeCard({
 }: {
   item: KnowledgeItem;
   onEdit?: (item: KnowledgeItem) => void;
-  onDelete: (item: KnowledgeItem) => (() => void) | void;
+  onDelete: (item: KnowledgeItem) => unknown;
   onTogglePin?: (item: KnowledgeItem) => void;
 }) {
   return (
@@ -294,7 +294,7 @@ export function ActivityItem({
   onDelete,
 }: {
   entry: ActivityEntry;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => unknown;
 }) {
   const meta = ITEM_META[entry.kind];
   const Icon = meta.icon;
