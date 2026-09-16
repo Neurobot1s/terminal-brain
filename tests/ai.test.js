@@ -1,11 +1,12 @@
 /*
  * NeuroBot AI transport test — this one makes REAL network calls.
- * It proves the whole fallback chain works end to end:
- *   1. load js/ai.js in a jsdom page hosted at a non-PHP origin (simulates
- *      GitHub Pages / any static host) — the ai.php proxy 404s there
+ * It proves the browser-direct OpenRouter transport works end to end:
+ *   1. load js/ai.js in a jsdom page (simulates GitHub Pages)
  *   2. ask a question through NB.askAI()
- *   3. expect a real answer fetched from NVIDIA NIM via the direct fallback
- * Skipped automatically if jsdom or the network is unavailable.
+ *   3. expect a real answer fetched from OpenRouter (NVIDIA model)
+ * Requires an OpenRouter key: set OPENROUTER_KEY env var, or paste a
+ * key into localStorage under "nb_ai_key" before running.
+ * Skipped automatically if jsdom, the key, or the network is unavailable.
  */
 const fs = require("fs");
 const path = require("path");
@@ -51,17 +52,31 @@ for (const f of ["js/core.js", "js/core-part2.js", "js/ai.js"]) {
 }
 
 const NB = window.NB;
+/* seed a key from the environment if provided (static hosts have none embedded) */
+if (process.env.OPENROUTER_KEY) {
+  window.localStorage.setItem("nb_ai_key", process.env.OPENROUTER_KEY);
+}
+const hasKey = !!NB.getAIKey();
 const checks = [];
 function check(label, ok, extra) {
   checks.push([label, ok === true ? "OK" : "FAIL" + (extra ? ": " + extra : "")]);
 }
 
 (async () => {
+  if (!hasKey) {
+    console.log("SKIP: no OpenRouter key (set OPENROUTER_KEY env var). The UI shows a friendly no-key message instead.");
+    const r = await NB.testAI();
+    check("no-key message is friendly", r && r.ok === false && /openrouter\.ai\/keys/.test(r.message), r ? r.message : "no result");
+    for (const [l, r2] of checks) console.log((r2 === "OK" ? " ✓" : " ✗"), l, r2 === "OK" ? "" : "→ " + r2);
+    process.exit(checks.some((c) => c[1] !== "OK") ? 1 : 0);
+    return;
+  }
+
   /* 1 — terminal-style smoke: testAI returns ok:true */
   try {
     const r = await NB.testAI();
     check("testAI ok", r && r.ok === true, r ? String(r.message).slice(0, 160) : "no result");
-    check("reply mentions transport", r && /proxy|direct/.test(r.message), r ? r.message : "");
+    check("reply mentions transport", r && /OpenRouter/.test(r.message), r ? r.message : "");
   } catch (e) {
     check("testAI ok", false, e.message);
   }

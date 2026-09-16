@@ -49,11 +49,11 @@
         '<div class="row-between"><span>Weekly digest (demo)</span><label class="switch"><input type="checkbox" id="set-digest"><span class="slider"></span></label></div>' +
       "</section>" +
       '<section class="panel"><h3>AI Connection</h3>' +
-        '<p class="muted">The AI answers questions using your memories, calling NVIDIA directly from your browser (works on GitHub Pages — no server needed). The embedded key is a demo key; override it below with your own.</p>' +
+        '<p class="muted">The AI answers questions using your memories. Requests go from your browser to OpenRouter (which hosts the NVIDIA model) — works on GitHub Pages with no server. Get a <strong>free key</strong> at <a class="panel-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a> and paste it below — it stays on this device.</p>' +
         '<div class="ai-model-row"><label class="muted-xs" for="ai-model">Model</label><select id="ai-model"></select>' +
           '<button class="btn btn-outline btn-sm" id="ai-model-save">Use this model</button></div>' +
         '<div class="row-between"><span>Custom key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
-        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Optional: paste a custom key (nvapi-…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Paste your free OpenRouter key (sk-or-…)" autocomplete="off" spellcheck="false" /></div>' +
         '<div class="ai-key-row">' +
           '<button class="btn btn-primary btn-sm" id="ai-key-save">Save key</button>' +
           '<button class="btn btn-outline btn-sm" id="ai-key-reset">Clear override</button>' +
@@ -80,7 +80,7 @@
 
     var prefs = loadPrefs();
     var keyPrev = $("#ai-key-preview", root);
-    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "embedded default"; }
+    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "no key set"; }
     keyPrev.textContent = maskKey(NB.getAIKey());
     $("#ai-key-save", root).addEventListener("click", function () {
       var v = $("#ai-key-input", root).value.trim();
@@ -102,22 +102,29 @@
     $("#ai-key-reset", root).addEventListener("click", function () {
       NB.setAIKey("");
       keyPrev.textContent = maskKey(NB.getAIKey());
-      toast("Using the embedded NVIDIA key.");
+      toast("Key cleared — paste an OpenRouter key to use Ask.", "warn");
+      refreshEnv();
     });
 
     /* model picker → localStorage (static hosting — no server writes) */
     var modelSel = $("#ai-model", root), envOut = $("#ai-env-out", root), testOut = $("#ai-test-out", root);
+    function modelLabel(m) {
+      if (String(m).indexOf("nemotron") !== -1) return "NVIDIA Nemotron (free)";
+      if (String(m).indexOf("nex") !== -1) return "Nex N2.5 Pro (free)";
+      if (String(m).indexOf("lfm") !== -1) return "Liquid LFM (free)";
+      return String(m);
+    }
     (NB.AI_MODELS || []).forEach(function (m) {
       var o = document.createElement("option");
       o.value = m;
-      o.textContent = String(m).indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano";
+      o.textContent = modelLabel(m);
       modelSel.appendChild(o);
     });
     modelSel.value = NB.getAIModel ? NB.getAIModel() : (NB.AI_MODELS || [])[0];
     function refreshEnv() {
       var e = NB.aiEnv ? NB.aiEnv() : {};
-      envOut.innerHTML = "env · transport: <b>direct</b> · browser: <b>" + NB.esc(e.protocol || "?") +
-        "</b> · key: <b>" + NB.esc(e.key || "?") + "</b> · model: <b>" + NB.esc((String(e.model || "").indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano")) + "</b>";
+      envOut.innerHTML = "env · transport: <b>OpenRouter (browser-direct)</b> · browser: <b>" + NB.esc(e.protocol || "?") +
+        "</b> · key: <b>" + NB.esc(e.key || "?") + "</b> · model: <b>" + NB.esc(modelLabel(e.model || "")) + "</b>";
       var st = NB.aiStatus ? NB.aiStatus() : {};
       if (st.lastError) envOut.innerHTML += " · last error: <b>" + NB.esc(st.lastError) + "</b>";
     }

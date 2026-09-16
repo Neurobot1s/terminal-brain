@@ -208,7 +208,7 @@
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
         ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query the AI"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
-        ["key / aitest / model", "AI key, connection test, model switch"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
+        ["key / aitest / model", "AI key (OpenRouter), connection test, model switch"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
       ];
       rows.forEach(function (r) { out.push(["t-cmd", "  " + pad(r[0], 18) + " " + r[1]]); });
@@ -334,12 +334,12 @@
     key: { desc: "set/view AI key override", run: function (args) {
       if (!args.length) {
         var k = NB.getAIKey();
-        return [["t-info", "custom key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "server default")], ["t-dim", "  set one:  key <your-api-key>   ·   clear:  key clear"]];
+        return [["t-info", "key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "none — get a free one at openrouter.ai/keys")], ["t-dim", "  set one:  key sk-or-…   ·   clear:  key clear"]];
       }
       var v = args.join("");
-      if (v.toLowerCase() === "clear") { NB.setAIKey(""); return [["t-ok", "override cleared — using the embedded NVIDIA key"]]; }
+      if (v.toLowerCase() === "clear") { NB.setAIKey(""); return [["t-ok", "key cleared"]]; }
       NB.setAIKey(v);
-      return [["t-ok", "key override saved — run 'aitest' to verify"]];
+      return [["t-ok", "key saved on this device — run 'aitest' to verify"]];
 } },
     aitest: { desc: "test AI connection", run: function () {
       NB.testAI().then(function (r) {
@@ -354,16 +354,17 @@
       return [["t-info", "$ ai --test … pinging the model…"]];
     } },
     model: { desc: "show/set AI model", run: function (args) {
-      var MODELS = NB.AI_MODELS || ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "openai/gpt-oss-20b"];
+      var MODELS = NB.AI_MODELS || ["nvidia/nemotron-3.5-lightning:free", "nex-agi/nex-n2.5-pro:free", "liquid/lfm-2.5-2.6b:free"];
       if (!args.length) {
         return [["t-info", "active model: " + (NB.getAIModel ? NB.getAIModel() : MODELS[0])], ["t-dim", "  switch:  model gpt   ·   model nemotron"]];
       }
       var want = args.join(" ").toLowerCase();
       var target = null;
-      if (want.indexOf("gpt") !== -1 || want.indexOf("oss") !== -1) target = MODELS[1];
-      else if (want.indexOf("nemo") !== -1 || want.indexOf("nano") !== -1) target = MODELS[0];
+      if (want.indexOf("nemo") !== -1 || want.indexOf("nv") !== -1) target = MODELS[0];
+      else if (want.indexOf("nex") !== -1) target = MODELS[1];
+      else if (want.indexOf("lfm") !== -1 || want.indexOf("liquid") !== -1) target = MODELS[2];
       else if (MODELS.indexOf(want) !== -1) target = want;
-      if (!target) return [["t-err", "unknown model — try: model gpt | model nemotron"]];
+      if (!target) return [["t-err", "unknown model — try: model nemotron | model nex | model lfm"]];
       var ok = NB.setAIModel(target);
       return ok
         ? [["t-ok", "✓ model set on this device: " + target], ["t-dim", "  takes effect on your next ask"]]

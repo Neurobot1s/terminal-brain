@@ -1,19 +1,24 @@
 /* ============================================================
    NeuroBot — ai.js (classic script; extends window.NB)
-   AI backend: NVIDIA NIM chat completions — DIRECT from the browser.
+   AI backend: NVIDIA models via OpenRouter, called directly
+   from the browser.
 
-   Built for static hosting (GitHub Pages): NVIDIA's integrate.api
-   endpoint sends `NVCF-ALLOW-ORIGIN: *`, so browser-direct calls are
-   allowed and no server-side proxy is needed. The API key ships in
-   this file (it's a demo key; swap it here or override it in
-   Settings → AI Connection / terminal `key`).
+   WHY OpenRouter: GitHub Pages has no server, and NVIDIA's
+   integrate.api endpoint only allows cross-origin browser
+   calls from build.nvidia.com — from any other origin the
+   browser blocks the response (no Access-Control-Allow-Origin).
+   OpenRouter sends `Access-Control-Allow-Origin: *`, so a
+   pure-static site can talk to it, and it hosts NVIDIA models
+   on its free tier.
+
+   Setup: create a FREE key at openrouter.ai/keys and paste it
+   in Settings → AI Connection (or terminal `key <sk-or-…>`).
+   It is stored only in this browser's localStorage.
 
    Resilience:
-     - retries transient failures (NVIDIA occasionally 503s on
-       capacity / 429 rate limits, with backoff)
-     - falls back to a secondary model if the primary is retired (410/404)
-     - if the browser blocks the cross-origin call (rare), we remember
-       for the session and report it clearly instead of hanging
+     - retries transient failures with backoff
+     - walks to the next free model on 404/410 (model retired)
+       AND on 429 (free-tier rate limit) — 3 free models available
      - reasoning models' <think>…</think> blocks are stripped
      - markdown formatting stripped (plain-text UI)
      - model preference persists in localStorage (terminal `model`)
@@ -22,20 +27,19 @@
   "use strict";
   if (!window.NB) return;
 
-  var KEY_STORE = "nb_ai_key";     /* custom key override */
+  var KEY_STORE = "nb_ai_key";     /* OpenRouter key override */
   var MODEL_STORE = "nb_ai_model"; /* preferred model */
   var MODELS = [
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-    "openai/gpt-oss-20b",
+    "nvidia/nemotron-3.5-lightning:free", /* NVIDIA — default */
+    "nex-agi/nex-n2.5-pro:free",          /* free fallback */
+    "liquid/lfm-2.5-2.6b:free",           /* free fallback */
   ];
-  var NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-  /* Embedded demo key so AI works on GitHub Pages and file:// out of the box. */
-  var DEFAULT_KEY = "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";
+  var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
   var ASK_LIMIT = 100;
 
   var isFile = location.protocol === "file:";
   var callCount = 0, lastError = "", lastModel = "";
-  var directBlocked = false; /* session memory: browser blocked the call */
+  var lastBlocked = ""; /* session memory of why a request failed hard */
 
   NB.getAIKey = function () {
     try { return localStorage.getItem(KEY_STORE) || ""; } catch (e) { return ""; }
@@ -65,15 +69,15 @@
   NB.AI_MODELS = MODELS;
 
   NB.aiStatus = function () {
-    return { calls: callCount, lastError: lastError, transport: "direct", model: lastModel, env: NB.aiEnv() };
+    return { calls: callCount, lastError: lastError, transport: "openrouter", model: lastModel, env: NB.aiEnv() };
   };
   /* host-capability diagnostics for Settings → AI Connection */
   NB.aiEnv = function () {
     return {
       protocol: location.protocol,
       file: isFile,
-      direct: directBlocked ? "blocked" : "ready",
-      key: NB.getAIKey() ? "custom" : "embedded",
+      direct: lastBlocked ? "blocked: " + lastBlocked : "ready",
+      key: NB.getAIKey() ? "custom" : "missing",
       model: NB.getAIModel(),
     };
   };
@@ -124,11 +128,6 @@
   }
 
   function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
-  function retryable(status, data) {
-    if (status === 429 || status >= 500) return true;
-    if (data && data.error && String(data.error.code || "") === "429") return true;
-    return false;
-  }
   function upstreamMsg(r, fb) {
     if (r && r.data && r.data.error) {
       if (r.data.error.message) return String(r.data.error.message);
@@ -136,51 +135,45 @@
     }
     return fb || "HTTP " + (r ? r.status : "?");
   }
-  function blockedError() {
-    return new Error("AI transport blocked on this host (the browser blocked the call to NVIDIA). Check that you're online, or that no extension is blocking integrate.api.nvidia.com.");
+
+  function noKeyError() {
+    return new Error("No OpenRouter key yet — get a FREE one at openrouter.ai/keys, then paste it in Settings → AI Connection (or terminal: key sk-or-…).");
   }
 
-  /* ---------- direct NVIDIA transport (the only transport) ---------- */
-  function postDirect(messages, maxTokens) {
-    if (directBlocked) return Promise.reject(blockedError());
-    var userKey = NB.getAIKey() || DEFAULT_KEY;
+  /* ---------- OpenRouter transport (browser-direct, CORS-allowed) ---------- */
+  function postAI(messages, maxTokens) {
+    var userKey = NB.getAIKey();
+    if (!userKey) return Promise.reject(noKeyError());
+
     var models = [NB.getAIModel()].concat(MODELS);
-    var idx = 0, transientTries = 0, saw503 = false;
+    var idx = 0, transientTries = 0;
 
     function attempt() {
       var model = models[idx];
       var body = {
         model: model,
         messages: messages,
-        max_tokens: Math.max(64, Math.min(4096, maxTokens || 900)),
+        max_tokens: Math.max(64, Math.min(2048, maxTokens || 900)),
         temperature: 0.6,
-        top_p: 0.95,
-        stream: false,
       };
-      if (model.indexOf("nemotron") !== -1) body.reasoning_budget = 256;
       var headers = {
         "Content-Type": "application/json",
-        "Accept": "application/json",
         "Authorization": "Bearer " + userKey,
+        "X-Title": "NeuroBot",
       };
-      return postOnce(NVIDIA_URL, headers, body, 45000).then(function (r) {
-        if (r.ok && r.data && r.data.choices) { lastModel = model; return r; }
-        if (r.ok && !r.data) {
-          /* 2xx but not JSON — treat as an upstream glitch, retry */
-          if (transientTries < 2) { transientTries++; return sleep(900).then(attempt); }
-          throw new Error("AI service returned a non-JSON response.");
+      return postOnce(OPENROUTER_URL, headers, body, 45000).then(function (r) {
+        if (r.ok && r.data && r.data.choices) { lastModel = model; lastBlocked = ""; return r; }
+        if (r.status === 401 || r.status === 403) {
+          throw new Error("OpenRouter rejected the key (" + r.status + ") — check it in Settings → AI Connection.");
         }
-        if (r.status === 410 || r.status === 404) {
-          /* model retired — walk to the next one */
-          if (idx < models.length - 1) { idx++; return attempt(); }
-          throw new Error("AI model unavailable (" + r.status + ") — pick another in Settings → AI Connection.");
+        /* model retired OR free-tier rate limit → walk to the next free model */
+        if ((r.status === 410 || r.status === 404 || r.status === 429) && idx < models.length - 1) {
+          idx++;
+          return sleep(r.status === 429 ? 800 : 0).then(attempt);
         }
-        if (retryable(r.status, r.data) && transientTries < 2) {
+        if ((r.status === 429 || r.status >= 500 || r.ok) && transientTries < 2) {
           transientTries++;
-          if (r.status === 503) saw503 = true;
-          /* 429 = rolling request window: wait longer so the retry
-             actually lands inside a fresh window instead of burning it */
-          return sleep(r.status === 429 ? 3500 : 900).then(attempt);
+          return sleep(r.status === 429 ? 1500 : 900).then(attempt);
         }
         throw new Error(upstreamMsg(r, "AI service error (HTTP " + r.status + ")"));
       });
@@ -188,14 +181,10 @@
 
     return attempt().catch(function (err) {
       if (err && err.network) {
-        /* TypeError from fetch: timeout, offline, or the browser blocked
-           the cross-origin call. Remember for the session. */
-        directBlocked = true;
-        lastError = "direct transport blocked (CORS/network)";
-        throw blockedError();
+        lastBlocked = "network/CORS";
+        throw new Error("Network error reaching the AI — check your connection and try again.");
       }
       var m = err && err.message ? err.message : String(err);
-      if (saw503 && /503|busy|capacity/i.test(m)) m = "AI service is busy right now (NVIDIA capacity) — try again in a moment.";
       lastError = m;
       if (err instanceof Error) { err.message = m; throw err; }
       throw new Error(m);
@@ -218,10 +207,10 @@
     var c = data && data.choices && data.choices[0] && (data.choices[0].message || data.choices[0]);
     if (!c) return "";
     var text = String(c.content || c.text || "").trim();
-    if (!text && c.reasoning_content) {
+    if (!text && (c.reasoning || c.reasoning_content)) {
       /* reasoning models: if the visible answer is empty, the tail of the
          reasoning usually carries the final sentence */
-      var rc = String(c.reasoning_content).trim();
+      var rc = String(c.reasoning || c.reasoning_content || "").trim();
       text = rc.length > 400 ? rc.slice(-400) : rc;
     }
     return stripMarkdown(text).trim();
@@ -235,10 +224,6 @@
         : "Network error — check your connection and try again.";
     }
     if (/aborted|timed out|signal is aborted/i.test(m)) return "The AI took too long to respond — try again.";
-    /* NVIDIA per-key rolling window ("Worker local total request limit reached") */
-    if (/ResourceExhausted|request limit|quota/i.test(m)) {
-      return "AI rate limit reached on this key — wait about a minute and try again. (Free NVIDIA keys allow ~16 requests per short window.)";
-    }
     return m;
   }
 
@@ -248,12 +233,15 @@
     if (callCount >= ASK_LIMIT) {
       return Promise.resolve({ ok: false, message: "Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset." });
     }
+    if (!NB.getAIKey()) {
+      return Promise.resolve({ ok: false, message: noKeyError().message });
+    }
     callCount++;
-    return postDirect([{ role: "user", content: "Reply with exactly: OK" }], 64).then(function (r) {
+    return postAI([{ role: "user", content: "Reply with exactly: OK" }], 64).then(function (r) {
       if (r && r.ok) {
         var t = extractAnswer(r.data);
         lastError = "";
-        return { ok: true, message: "AI connection OK (direct) — model replied: " + (t || "(empty)") };
+        return { ok: true, message: "AI connection OK (OpenRouter → " + lastModel + ") — model replied: " + (t || "(empty)") };
       }
       var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
       lastError = msg;
@@ -270,7 +258,7 @@
     }
     callCount++;
     var msgs = messagesFor(question);
-    return postDirect(msgs, 900).then(function (r) {
+    return postAI(msgs, 900).then(function (r) {
       if (!r || !r.ok) {
         var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
         lastError = msg;
