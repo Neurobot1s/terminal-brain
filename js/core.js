@@ -148,7 +148,8 @@
           if (x.source) item.source = String(x.source).slice(0, 200);
           if (x.status) item.status = String(x.status).slice(0, 20);
           if (x.progress != null) item.progress = Math.max(0, Math.min(100, Number(x.progress) || 0));
-          if (x.deadline) item.deadline = String(x.deadline).slice(0, 10);
+          /* deadline must be a real ISO date — anything else breaks the goals UI */
+          if (x.deadline && /^\d{4}-\d{2}-\d{2}$/.test(String(x.deadline).slice(0, 10))) item.deadline = String(x.deadline).slice(0, 10);
           if (x.pinned) item.pinned = true;
           return item;
         });

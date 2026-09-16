@@ -70,7 +70,7 @@
         '<input type="file" id="set-import-file" accept=".json,application/json" style="display:none" />' +
       "</section>" +
       '<section class="panel"><h3>Privacy</h3>' +
-        '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends your memories to the AI model through this site\'s own server.</p>' +
+        '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends your question + relevant memory text straight to NVIDIA\'s model via OpenRouter over HTTPS.</p>' +
       "</section>" +
       '<section class="panel"><h3>About NeuroBot</h3>' +
         '<p class="muted">NeuroBot — Your Second Brain.</p>' +
@@ -109,10 +109,11 @@
     /* model picker → localStorage (static hosting — no server writes) */
     var modelSel = $("#ai-model", root), envOut = $("#ai-env-out", root), testOut = $("#ai-test-out", root);
     function modelLabel(m) {
-      if (String(m).indexOf("nemotron") !== -1) return "NVIDIA Nemotron (free)";
-      if (String(m).indexOf("nex") !== -1) return "Nex N2.5 Pro (free)";
-      if (String(m).indexOf("lfm") !== -1) return "Liquid LFM (free)";
-      return String(m);
+      var s = String(m);
+      if (s.indexOf("lightning") !== -1) return "NVIDIA Nemotron Lightning (fast)";
+      if (s.indexOf("super") !== -1) return "NVIDIA Nemotron Super (balanced)";
+      if (s.indexOf("nano") !== -1) return "NVIDIA Nemotron Nano Omni (reasoning)";
+      return s;
     }
     (NB.AI_MODELS || []).forEach(function (m) {
       var o = document.createElement("option");

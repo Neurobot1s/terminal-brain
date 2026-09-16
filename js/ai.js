@@ -30,9 +30,9 @@
   var KEY_STORE = "nb_ai_key";     /* OpenRouter key override */
   var MODEL_STORE = "nb_ai_model"; /* preferred model */
   var MODELS = [
-    "nvidia/nemotron-3.5-lightning:free", /* NVIDIA — default */
-    "nex-agi/nex-n2.5-pro:free",          /* free fallback */
-    "liquid/lfm-2.5-2.6b:free",           /* free fallback */
+    "nvidia/nemotron-3.5-lightning:free",                          /* NVIDIA — default */
+    "nvidia/nemotron-3-super-120b-a12b:free",                      /* NVIDIA — fallback */
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning-20260428:free", /* NVIDIA — last resort */
   ];
   var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
   var ASK_LIMIT = 100;
@@ -166,8 +166,8 @@
         if (r.status === 401 || r.status === 403) {
           throw new Error("OpenRouter rejected the key (" + r.status + ") — check it in Settings → AI Connection.");
         }
-        /* model retired OR free-tier rate limit → walk to the next free model */
-        if ((r.status === 410 || r.status === 404 || r.status === 429) && idx < models.length - 1) {
+        /* model retired OR free-tier rate limit/quota → walk to the next free model */
+        if ((r.status === 410 || r.status === 404 || r.status === 429 || r.status === 402) && idx < models.length - 1) {
           idx++;
           return sleep(r.status === 429 ? 800 : 0).then(attempt);
         }

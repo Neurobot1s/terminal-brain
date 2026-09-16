@@ -15,7 +15,7 @@
   };
 
   NB.savePrefs = function (p) {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (e) { /* private mode — apply anyway */ }
     NB.applyPrefs(p);
   };
 

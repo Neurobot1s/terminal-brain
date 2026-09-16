@@ -354,17 +354,18 @@
       return [["t-info", "$ ai --test … pinging the model…"]];
     } },
     model: { desc: "show/set AI model", run: function (args) {
-      var MODELS = NB.AI_MODELS || ["nvidia/nemotron-3.5-lightning:free", "nex-agi/nex-n2.5-pro:free", "liquid/lfm-2.5-2.6b:free"];
+      var MODELS = NB.AI_MODELS || [];
       if (!args.length) {
-        return [["t-info", "active model: " + (NB.getAIModel ? NB.getAIModel() : MODELS[0])], ["t-dim", "  switch:  model gpt   ·   model nemotron"]];
+        return [["t-info", "active model: " + (NB.getAIModel ? NB.getAIModel() : (MODELS[0] || "nvidia"))], ["t-dim", "  switch:  model lightning   ·   model super   ·   model nano"]];
       }
       var want = args.join(" ").toLowerCase();
       var target = null;
-      if (want.indexOf("nemo") !== -1 || want.indexOf("nv") !== -1) target = MODELS[0];
-      else if (want.indexOf("nex") !== -1) target = MODELS[1];
-      else if (want.indexOf("lfm") !== -1 || want.indexOf("liquid") !== -1) target = MODELS[2];
+      if (want.indexOf("light") !== -1) target = MODELS[0];
+      else if (want.indexOf("super") !== -1) target = MODELS[1];
+      else if (want.indexOf("nano") !== -1) target = MODELS[2];
       else if (MODELS.indexOf(want) !== -1) target = want;
-      if (!target) return [["t-err", "unknown model — try: model nemotron | model nex | model lfm"]];
+      else if (want.indexOf("nemotron") !== -1 || want.indexOf("nvidia") !== -1 || want.indexOf("nv") !== -1) target = MODELS[0];
+      if (!target) return [["t-err", "unknown model — try: model lightning | model super | model nano"]];
       var ok = NB.setAIModel(target);
       return ok
         ? [["t-ok", "✓ model set on this device: " + target], ["t-dim", "  takes effect on your next ask"]]

@@ -1,8 +1,10 @@
 # NeuroBot — Your Second Brain 🧠
 
+**Live: https://neurobot1s.github.io/terminal-brain/#/**
+
 A polished, personal second-brain app: capture notes, ideas, knowledge and goals,
-see them on a neural knowledge graph, and **ask your brain questions** — NVIDIA NIM
-(`nemotron-3-nano`) answers using your own memories as context.
+see them on a neural knowledge graph, and **ask your brain questions** — NVIDIA
+Nemotron (via OpenRouter) answers using your own memories as context.
 
 **Crafted by TANISHQ LALWANI** ✨
 
@@ -22,12 +24,14 @@ Just open `index.html` in a browser — that's it. It also works from any static
    Branch: `main` / `/(root)` → Save.
 3. Your site is live at `https://<user>.github.io/<repo>/` in a minute or two.
 
-No build step, no workflow file, no server needed — the AI calls NVIDIA
-directly from the browser (the API allows cross-origin requests), so a
-pure-static host is all it takes.
+No build step, no workflow file, no server needed — the AI calls OpenRouter
+(which serves the NVIDIA Nemotron models) directly from the browser
+(`Access-Control-Allow-Origin: *`), so a pure-static host is all it takes.
 
 **Check AI works:** open the site, press `` ` `` and run `aitest` — you should
-see `✓ AI connection OK (direct) — model replied: OK`.
+see `✓ AI connection OK (OpenRouter → nvidia/…)`. If it reports no key, paste a
+FREE one from [openrouter.ai/keys](https://openrouter.ai/keys) in
+Settings → AI Connection (stored on your device only).
 
 ## Files
 
@@ -41,7 +45,7 @@ js/
   core.js             localStorage store, helpers, seed data
   core-part2.js       CRUD, modals, capture forms, neural graph (SVG)
   prefs.js            theme / density / motion preferences
-  ai.js               "Ask your brain" — browser-direct calls to NVIDIA NIM
+  ai.js               "Ask your brain" — browser-direct calls to OpenRouter (NVIDIA models)
   views-dashboard.js  hero, ask box (inline AI chat), stat cards, graph, pinned, quick capture
   views-collections.js  My Brain / Notes / Knowledge / Goals
   views-kanban.js     Ideas board (drag & drop between columns)
@@ -66,11 +70,10 @@ js/
   reset demo / erase all, privacy and about.
 - **Ask (AI)** — the dashboard box is a real inline chat: answers appear as
   bubbles right under the input. Every page's ✦ Ask button and the Ctrl+K
-  palette feed your real memories to NVIDIA NIM (`nemotron-3-nano`) with
+  palette feed your real memories to **NVIDIA Nemotron via OpenRouter** with
   **browser-direct calls** — no server, no PHP, works on GitHub Pages.
-  The embedded key is a demo key; override it in Settings → AI Connection
-  or the terminal `key` command (stored on your device only).
-  100 asks per session.
+  Paste your free key in Settings → AI Connection or the terminal `key`
+  command (stored on your device only). 100 asks per session.
 - **AI Connection panel (Settings)** — switch the model (saved per-device
   via localStorage), test the connection, see live diagnostics
   (protocol / key in use / model), optional key override.
@@ -82,7 +85,7 @@ js/
 - **In-app terminal** — drop-down console with working commands (`help`,
   `ls`, `find`, `cd`, `new`, `ask`, `print`, `py` (mini Python with
   print/math/vars), `theme`, `stats`, `export`, `history`, `key`, `aitest`,
-  `model` (switch AI model), `sudo`).
+  `model lightning|super|nano`, `sudo`).
 - **Data portability** — JSON export **and** validated JSON import in Settings.
 - **Living graph** — neural-network node sizes reflect your real memory counts;
   edges pulse with an animated flow. Hover nodes for per-topic totals.
@@ -100,13 +103,10 @@ node tests/routes.test.js     # 16 checks: every page renders, kanban, graph, pa
 
 Don't upload the `tests/` folder to htdocs — it's for development only.
 
-## Notes
-
-- All data lives in `localStorage` on the device — nothing is sent anywhere except
-  your question + relevant memory text when you use Ask (which goes straight
-to NVIDIA's API over HTTPS from your browser).
-- The AI key is embedded in `js/ai.js` (demo key). To swap it, edit `DEFAULT_KEY`
-  there, or paste your own key in Settings → AI Connection — overrides are
-  stored only on your device. A key override can also be set with the terminal
-  `key` command.
+## Notes- All data lives in `localStorage` on the device — nothing is sent anywhere except
+  your question + relevant memory text when you use Ask (which goes from your
+  browser to OpenRouter over HTTPS, which routes to NVIDIA).
+- No key is embedded anywhere. Paste your free OpenRouter key in
+  Settings → AI Connection or the terminal `key` command — it is stored only
+  on your device (localStorage).
 - The neural graph is a visual prototype; connections are illustrative, not AI-generated.

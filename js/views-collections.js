@@ -236,15 +236,17 @@
 
   function goalCard(g) {
     var meta = GOAL_STATUSES.find(function (x) { return x.value === g.status; }) || GOAL_STATUSES[0];
-    var left = daysUntil(g.deadline);
+    var hasDl = /^\d{4}-\d{2}-\d{2}$/.test(g.deadline || "");
+    var left = hasDl ? daysUntil(g.deadline) : Infinity;
     var urgency = left < 0 ? "overdue" : left <= 7 ? "soon" : "ok";
+    var when = hasDl ? (left < 0 ? "overdue" : left + "d left") + " · " + formatDate(new Date(g.deadline + "T00:00:00").getTime()) : "no deadline";
     return '<div class="mem-card violet" data-id="' + g.id + '">' +
       '<div class="mem-top"><span class="mem-ico violet">◎</span><span class="mem-kind">' + meta.label + "</span>" +
       '<button class="pin-btn ' + (g.pinned ? "on" : "") + '" data-pin="' + g.id + '" data-kind="goal">◆</button></div>' +
       '<strong class="mem-title">' + esc(g.title) + "</strong>" +
       '<p class="mem-body">' + esc(g.body || "") + "</p>" +
       '<div class="progress-track"><div class="progress-fill" style="width:' + (g.progress || 0) + '%"></div></div>' +
-      '<div class="mem-foot"><span class="' + urgency + '">' + (left < 0 ? "overdue" : left + "d left") + " · " + formatDate(new Date(g.deadline + "T00:00:00").getTime()) + "</span>" +
+      '<div class="mem-foot"><span class="' + urgency + '">' + when + "</span>" +
       '<span class="row-actions">' +
         '<button class="row-btn" data-goal-progress="' + g.id + '" data-delta="-10">−10%</button>' +
         '<button class="row-btn" data-goal-progress="' + g.id + '" data-delta="+10">+10%</button>' +
