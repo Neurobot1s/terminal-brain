@@ -117,12 +117,36 @@
     $$(".qc-btn", root).forEach(function (b) {
       b.addEventListener("click", function () { openCapture(b.getAttribute("data-capture")); });
     });
+    /* inline AI chat — answers appear right under the box */
+    var thread = el('<div class="ask-thread" hidden></div>');
+    root.querySelector(".ask-box").insertAdjacentElement("afterend", thread);
+    function bubble(kind, text) {
+      var b = el('<div class="bubble ' + kind + '"></div>');
+      b.textContent = text;
+      thread.appendChild(b);
+      thread.hidden = false;
+      b.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return b;
+    }
     function send() {
       var input = $("#ask-input", root);
       var q = input.value.trim();
       if (!q) return;
       input.value = "";
-      openAskModal(q);
+      bubble("user", q);
+      var thinking = bubble("ai think", "✦ thinking with " + totalItems() + " memories…");
+      var sendBtn = $("#ask-send", root);
+      sendBtn.disabled = true;
+      NB.askGemini(q).then(function (answer) {
+        thinking.className = "bubble ai";
+        thinking.textContent = answer;
+      }).catch(function (err) {
+        thinking.className = "bubble err";
+        thinking.textContent = "⚠ " + (err.message || String(err));
+      }).then(function () {
+        sendBtn.disabled = false;
+        input.focus();
+      });
     }
     $("#ask-send", root).addEventListener("click", send);
     $("#ask-input", root).addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });

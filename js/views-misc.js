@@ -50,12 +50,18 @@
       "</section>" +
       '<section class="panel"><h3>AI Connection</h3>' +
         '<p class="muted">The AI answers questions using your memories. The key lives safely on the server (ai.php) — the field below is optional and only used to override it.</p>' +
+        '<div class="ai-model-row"><label class="muted-xs" for="ai-model">Model</label><select id="ai-model">' +
+          '<option value="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning">Nemotron Nano (default)</option>' +
+          '<option value="openai/gpt-oss-20b">GPT-OSS 20B (fallback)</option></select>' +
+          '<button class="btn btn-outline btn-sm" id="ai-model-save">Use this model</button></div>' +
         '<div class="row-between"><span>Custom key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
-        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Optional: paste a custom key (nvapi-…)" autocomplete="off" spellcheck="false" />' +
-          '<button class="btn btn-primary btn-sm" id="ai-key-save">Save</button></div>' +
-        '<div class="ai-key-row"><button class="btn btn-outline btn-sm" id="ai-key-test">Test connection</button>' +
-          '<button class="btn btn-outline btn-sm" id="ai-key-reset">Clear override</button></div>' +
+        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Optional: paste a custom key (nvapi-…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="ai-key-row">' +
+          '<button class="btn btn-primary btn-sm" id="ai-key-save">Save key</button>' +
+          '<button class="btn btn-outline btn-sm" id="ai-key-reset">Clear override</button>' +
+          '<button class="btn btn-outline btn-sm" id="ai-key-test">Test connection</button></div>' +
         '<div id="ai-test-out" class="ai-test-out"></div>' +
+        '<div id="ai-env-out" class="ai-env"></div>' +
         '<p class="muted muted-xs">Runs locally on InfinityFree — no third-party proxy, nothing else leaves your hosting.</p>' +
       '</section>' +
       '<section class="panel"><h3>Data</h3>' +
@@ -99,6 +105,37 @@
       NB.setGeminiKey("");
       keyPrev.textContent = maskKey(NB.getGeminiKey());
       toast("Using the server key.");
+    });
+
+    /* model picker → PATCH ai.php (falls back gracefully when read-only) */
+    var modelSel = $("#ai-model", root), envOut = $("#ai-env-out", root), testOut = $("#ai-test-out", root);
+    function refreshEnv() {
+      var e = NB.aiEnv ? NB.aiEnv() : {};
+      envOut.innerHTML = "env · transport: <b>" + NB.esc(e.protocol || "?") + "</b> · proxy: <b>" + NB.esc(e.proxy || "?") +
+        "</b> · direct: <b>" + NB.esc(e.direct || "?") + "</b> · key: <b>" + NB.esc(e.key || "?") + "</b>";
+      var st = NB.geminiStatus ? NB.geminiStatus() : {};
+      if (st.model) {
+        var label = String(st.model).indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano";
+        var has = Array.prototype.some.call(modelSel.options, function (o) { return o.value === st.model; });
+        if (has) modelSel.value = st.model;
+        envOut.innerHTML += " · active: <b>" + label + "</b>";
+      }
+    }
+    refreshEnv();
+    $("#ai-model-save", root).addEventListener("click", function () {
+      var m = modelSel.value;
+      var btn = $("#ai-model-save", root);
+      btn.disabled = true;
+      fetch("ai.php", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: m }),
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+        btn.disabled = false;
+        if (res.ok && res.j.ok) { toast("Model saved server-side."); }
+        else { toast(String((res.j && res.j.error && res.j.error.message) || "Could not save — default kept."), "err"); }
+        testOut.className = "ai-test-out";
+      }).catch(function () { btn.disabled = false; toast("Proxy unreachable — running on the static-host fallback.", "err"); });
     });
 
     $("#set-density", root).checked = prefs.compact;

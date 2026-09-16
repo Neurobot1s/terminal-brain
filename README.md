@@ -66,18 +66,24 @@ js/
 - **Connections** — bigger neural graph with explainer side panel.
 - **Settings** — 3 themes, compact density, reduce motion, JSON export,
   reset demo / erase all, privacy and about.
-- **Ask (AI)** — every page's ✦ Ask button and the Ctrl+K palette feed your
-  real memories to NVIDIA NIM (`nemotron-3-nano`) through `ai.php`, so the API
-  key never appears in page source. Requires the site to be hosted with PHP
-  enabled (InfinityFree supports it). 100 asks per session.
+- **Ask (AI)** — the dashboard box is a real inline chat: answers appear as
+  bubbles right under the input. Every page's ✦ Ask button and the Ctrl+K
+  palette feed your real memories to NVIDIA NIM (`nemotron-3-nano`) through
+  `ai.php`, so the API key never appears in page source. Requires the site to
+  be hosted with PHP enabled (InfinityFree supports it); static hosts fall
+  back to a direct NVIDIA connection automatically. 100 asks per session.
+- **AI Connection panel (Settings)** — switch the model server-side
+  (saved via PATCH to `nb_model.json`), test the connection, see live
+  transport diagnostics (proxy / direct / key in use), optional key override.
 - **Extras** — Credits popup (crafted by Tanishq Lalwani), Live voice modal
   (coming soon), brain-health indicator, collapsible sidebar, fully responsive
   with mobile drawer, toasts.
 - **Keyboard** — Ctrl+K palette with arrow-key nav and actions, `?` shortcuts
   modal, `g`+key page jumps, `N`/`I`/`G` quick capture, `` ` `` terminal.
-- **In-app terminal** — drop-down console with working commands (`help`, `ls`,
-  `find`, `cd`, `new`, `ask`, `print`, `py` (mini Python with print/math/vars),
-  `theme`, `stats`, `export`, `history`, `key`, `aitest`, `sudo`).
+- **In-app terminal** — drop-down console with working commands (`help`,
+  `ls`, `find`, `cd`, `new`, `ask`, `print`, `py` (mini Python with
+  print/math/vars), `theme`, `stats`, `export`, `history`, `key`, `aitest`,
+  `model` (switch AI model), `sudo`).
 - **Data portability** — JSON export **and** validated JSON import in Settings.
 - **Living graph** — neural-network node sizes reflect your real memory counts;
   edges pulse with an animated flow. Hover nodes for per-topic totals.

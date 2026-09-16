@@ -208,7 +208,7 @@
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
         ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query the AI"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
-        ["key / aitest", "set or test the AI key"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
+        ["key / aitest / model", "AI key, connection test, model switch"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
       ];
       rows.forEach(function (r) { out.push(["t-cmd", "  " + pad(r[0], 18) + " " + r[1]]); });
@@ -352,6 +352,38 @@
         term.scrollTop = term.scrollHeight;
       });
       return [["t-info", "$ ai --test … pinging the model…"]];
+    } },
+    model: { desc: "show/set AI model", run: function (args) {
+      var MODELS = ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "openai/gpt-oss-20b"];
+      if (!args.length) {
+        var st = NB.geminiStatus ? NB.geminiStatus() : {};
+        return [["t-info", "active model: " + (st.model || MODELS[0])], ["t-dim", "  switch:  model gpt   ·   model nemotron"]];
+      }
+      var want = args.join(" ").toLowerCase();
+      var target = null;
+      if (want.indexOf("gpt") !== -1 || want.indexOf("oss") !== -1) target = MODELS[1];
+      else if (want.indexOf("nemo") !== -1 || want.indexOf("nano") !== -1) target = MODELS[0];
+      else if (MODELS.indexOf(want) !== -1) target = want;
+      if (!target) return [["t-err", "unknown model — try: model gpt | model nemotron"]];
+      return fetch("ai.php", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: target }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var term = document.querySelector(".term-out");
+          if (!term) return;
+          var d = document.createElement("div");
+          d.className = "term-line " + (j.ok ? "t-ok" : "t-warn");
+          d.textContent = j.ok ? "✓ server default model set: " + j.model : "⚠ " + ((j.error && j.error.message) || "could not save (read-only fs?)") + " — AI still works with the default model";
+          term.appendChild(d);
+          term.scrollTop = term.scrollHeight;
+        })
+        .catch(function () {
+          var term = document.querySelector(".term-out");
+          if (!term) return;
+          var d = document.createElement("div");
+          d.className = "term-line t-warn";
+          d.textContent = "⚠ no ai.php on this host (static fallback) — keeping default model";
+          term.appendChild(d);
+        });
     } },
     sudo: { desc: "nice try", run: function () { return [["t-err", "sudo: permission denied — this brain belongs to tanishq 😄"]]; } },
   };

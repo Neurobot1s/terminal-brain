@@ -106,6 +106,30 @@ a, button, .row-btn, .row-del, .pin-btn, .modal-close, .qc-btn, .icon-btn {
 }
 
 /* ── 4. Misc fixes ── */
+/* muted text variant used across all views */
+.muted { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin: 4px 0 10px; }
+/* dashboard inline AI chat thread */
+.ask-thread { display: flex; flex-direction: column; gap: 8px; margin: -10px 0 20px; }
+.ask-thread .bubble {
+  max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.6;
+  overflow-wrap: anywhere; white-space: pre-wrap; animation: pop 0.22s var(--ease);
+}
+.ask-thread .bubble.user {
+  align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #0a0d16; font-weight: 600; border-bottom-right-radius: 5px;
+}
+.ask-thread .bubble.ai {
+  align-self: flex-start; background: var(--panel); border: 1px solid var(--border-2);
+  color: var(--text); border-bottom-left-radius: 5px;
+}
+.ask-thread .bubble.ai.think {
+  color: var(--muted); border-style: dashed; animation: pulse 1.4s infinite;
+}
+.ask-thread .bubble.err {
+  align-self: flex-start; background: rgba(248,113,113,.07); border: 1px solid rgba(248,113,113,.4); color: #fca5a5;
+}
+/* terminal-window close button (shares modal-close base) */
+.term-close { position: relative; }
 /* keyboard nav: visible focus ring everywhere */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
 textarea:focus-visible, [tabindex]:focus-visible {
@@ -116,3 +140,25 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .mem-title, .mem-body, .act-title, .sc-desc { overflow-wrap: anywhere; }
 /* selected kanban card gets a lifted look while dragging */
 .mem-card.dragging { opacity: 0.55; }
+
+/* ── 5. Settings → AI Connection panel ── */
+.ai-key-row { display: flex; gap: 8px; margin: 9px 0 0; }
+.ai-key-row .key-input { flex: 1; min-width: 0; }
+.ai-key-row + .ai-key-row { margin-top: 8px; }
+.key-preview {
+  font-family: var(--mono); font-size: 11px; color: var(--faint);
+  background: rgba(0,0,0,.3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 3px 8px; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ai-test-out {
+  display: none; margin-top: 10px; padding: 10px 12px; border-radius: 9px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap;
+}
+.ai-test-out.pending { display: block; border: 1px dashed var(--border-2); color: var(--muted); }
+.ai-test-out.ok { display: block; border: 1px solid rgba(74,222,128,.4); background: rgba(74,222,128,.07); color: #86efac; }
+.ai-test-out.err { display: block; border: 1px solid rgba(248,113,113,.4); background: rgba(248,113,113,.06); color: #fca5a5; }
+.ai-model-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.ai-model-row select { width: auto; flex: 1 1 220px; min-width: 0; }
+.ai-model-row .btn { flex: none; }
+.ai-env { margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--faint); line-height: 1.6; }
+.ai-env b { color: var(--muted); font-weight: 600; }
