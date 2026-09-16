@@ -13,7 +13,7 @@ UPLOAD to htdocs/neurobot.kesug.com/ :
   styles.perf.css
   js/                 (whole folder — all 11 files)
 
-DO NOT UPLOAD:  tests/  README.md  DEPLOY.txt  .git*  .env*
+DO NOT UPLOAD:  tests/  README.md  DEPLOY.txt  .git*  .env*  nb_model.json
 
 ───────────────────────────────────────────────────────
  AFTER UPLOAD — 3 CHECKS (30 seconds)
@@ -36,6 +36,8 @@ DO NOT UPLOAD:  tests/  README.md  DEPLOY.txt  .git*  .env*
 ───────────────────────────────────────────────────────
  • API key lives INSIDE ai.php only — never in page source.
    To swap keys: edit $SERVER_KEY in ai.php. Nothing else.
+ • Model choice: Settings → AI Connection (saved to nb_model.json on
+   the server; delete that file to reset to the default model).
  • All data in localStorage on the device. Export/Import
    in Settings → Data.
  • Terminal: ` key · help · py 6*7 · ask <question>

@@ -287,8 +287,13 @@
     return m;
   }
 
-  /* Diagnostic used by Settings → AI Connection and terminal `aitest`. */
+  /* Diagnostic used by Settings → AI Connection and terminal `aitest`.
+     Counts against the session budget like any other ask. */
   NB.testGemini = function () {
+    if (callCount >= ASK_LIMIT) {
+      return Promise.resolve({ ok: false, message: "Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset." });
+    }
+    callCount++;
     env.last503 = false;
     return postAI([{ role: "user", content: "Reply with exactly: OK" }], 256).then(function (r) {
       if (r && r.ok) {
