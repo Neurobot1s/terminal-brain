@@ -49,10 +49,8 @@
         '<div class="row-between"><span>Weekly digest (demo)</span><label class="switch"><input type="checkbox" id="set-digest"><span class="slider"></span></label></div>' +
       "</section>" +
       '<section class="panel"><h3>AI Connection</h3>' +
-        '<p class="muted">The AI answers questions using your memories. The key lives safely on the server (ai.php) — the field below is optional and only used to override it.</p>' +
-        '<div class="ai-model-row"><label class="muted-xs" for="ai-model">Model</label><select id="ai-model">' +
-          '<option value="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning">Nemotron Nano (default)</option>' +
-          '<option value="openai/gpt-oss-20b">GPT-OSS 20B (fallback)</option></select>' +
+        '<p class="muted">The AI answers questions using your memories, calling NVIDIA directly from your browser (works on GitHub Pages — no server needed). The embedded key is a demo key; override it below with your own.</p>' +
+        '<div class="ai-model-row"><label class="muted-xs" for="ai-model">Model</label><select id="ai-model"></select>' +
           '<button class="btn btn-outline btn-sm" id="ai-model-save">Use this model</button></div>' +
         '<div class="row-between"><span>Custom key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
         '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Optional: paste a custom key (nvapi-…)" autocomplete="off" spellcheck="false" /></div>' +
@@ -62,7 +60,7 @@
           '<button class="btn btn-outline btn-sm" id="ai-key-test">Test connection</button></div>' +
         '<div id="ai-test-out" class="ai-test-out"></div>' +
         '<div id="ai-env-out" class="ai-env"></div>' +
-        '<p class="muted muted-xs">Runs locally on InfinityFree — no third-party proxy, nothing else leaves your hosting.</p>' +
+        '<p class="muted muted-xs">Runs fully client-side — the browser talks straight to NVIDIA. Only your question + relevant memory text leave the device.</p>' +
       '</section>' +
       '<section class="panel"><h3>Data</h3>' +
         '<div class="row-between"><span>Export brain as JSON</span><button class="btn btn-outline btn-sm" id="set-export">Export</button></div>' +
@@ -107,35 +105,28 @@
       toast("Using the server key.");
     });
 
-    /* model picker → PATCH ai.php (falls back gracefully when read-only) */
+    /* model picker → localStorage (static hosting — no server writes) */
     var modelSel = $("#ai-model", root), envOut = $("#ai-env-out", root), testOut = $("#ai-test-out", root);
+    (NB.AI_MODELS || []).forEach(function (m) {
+      var o = document.createElement("option");
+      o.value = m;
+      o.textContent = String(m).indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano";
+      modelSel.appendChild(o);
+    });
+    modelSel.value = NB.getAIModel ? NB.getAIModel() : (NB.AI_MODELS || [])[0];
     function refreshEnv() {
       var e = NB.aiEnv ? NB.aiEnv() : {};
-      envOut.innerHTML = "env · transport: <b>" + NB.esc(e.protocol || "?") + "</b> · proxy: <b>" + NB.esc(e.proxy || "?") +
-        "</b> · direct: <b>" + NB.esc(e.direct || "?") + "</b> · key: <b>" + NB.esc(e.key || "?") + "</b>";
+      envOut.innerHTML = "env · transport: <b>direct</b> · browser: <b>" + NB.esc(e.protocol || "?") +
+        "</b> · key: <b>" + NB.esc(e.key || "?") + "</b> · model: <b>" + NB.esc((String(e.model || "").indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano")) + "</b>";
       var st = NB.geminiStatus ? NB.geminiStatus() : {};
-      if (st.model) {
-        var label = String(st.model).indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano";
-        var has = Array.prototype.some.call(modelSel.options, function (o) { return o.value === st.model; });
-        if (has) modelSel.value = st.model;
-        envOut.innerHTML += " · active: <b>" + label + "</b>";
-      }
+      if (st.lastError) envOut.innerHTML += " · last error: <b>" + NB.esc(st.lastError) + "</b>";
     }
     refreshEnv();
     $("#ai-model-save", root).addEventListener("click", function () {
-      var m = modelSel.value;
-      var btn = $("#ai-model-save", root);
-      btn.disabled = true;
-      fetch("ai.php", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: m }),
-      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
-        btn.disabled = false;
-        if (res.ok && res.j.ok) { toast("Model saved server-side."); }
-        else { toast(String((res.j && res.j.error && res.j.error.message) || "Could not save — default kept."), "err"); }
-        testOut.className = "ai-test-out";
-      }).catch(function () { btn.disabled = false; toast("Proxy unreachable — running on the static-host fallback.", "err"); });
+      var ok = NB.setAIModel(modelSel.value);
+      toast(ok ? "Model saved on this device." : "Could not save — keeping default.", ok ? "ok" : "err");
+      refreshEnv();
+      testOut.className = "ai-test-out";
     });
 
     $("#set-density", root).checked = prefs.compact;

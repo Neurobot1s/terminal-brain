@@ -1,43 +1,49 @@
 ═══════════════════════════════════════════════════════
- NEUROBOT — DEPLOY CHEAT SHEET (InfinityFree)
+ NEUROBOT — DEPLOY CHEAT SHEET (GitHub Pages)
 ═══════════════════════════════════════════════════════
 
-UPLOAD to htdocs/neurobot.kesug.com/ :
+PUSH to GitHub, then enable Pages:
 
-  index.html          (required)
-  ai.php              (required — the AI proxy)
-  .htaccess           (recommended — default doc + cache)
+  Repo → Settings → Pages
+    Source: Deploy from a branch
+    Branch: main  ·  Folder: /(root)  → Save
+
+  Site goes live at: https://<user>.github.io/<repo>/
+
+SHIP these files (everything in the repo root):
+  index.html
   logo.svg
   styles.css
   styles.polish.css
   styles.perf.css
   js/                 (whole folder — all 11 files)
 
-DO NOT UPLOAD:  tests/  README.md  DEPLOY.txt  .git*  .env*  nb_model.json
+DO NOT SHIP:  tests/  .env*  .git*
+
+No PHP, no server, no build step — AI calls NVIDIA
+directly from the browser (CORS is allowed by NVIDIA).
 
 ───────────────────────────────────────────────────────
- AFTER UPLOAD — 3 CHECKS (30 seconds)
+ AFTER DEPLOY — 30-SECOND CHECK
 ───────────────────────────────────────────────────────
 
-1) Site loads?      https://neurobot.kesug.com/
+1) Site loads?   https://<user>.github.io/<repo>/
    (stale look? Ctrl+Shift+R)
 
-2) AI proxy alive?  https://neurobot.kesug.com/ai.php
-   Should print: {"ok":true,"service":"neurobot ai proxy",...}
+2) AI answers?   open the site, press ` , type:  aitest
+   Expect: "✓ AI connection OK (direct) — model replied: OK"
 
-3) AI answers?      open site, press ` , type:  aitest
-   Expect: "✓ AI connection OK — model replied: OK"
-
-   First-time "non-JSON page" error?  Reload the site once
-   (InfinityFree security check), then aitest again.
+   Offline test also works: open index.html straight from
+   disk (file://) — everything runs locally.
 
 ───────────────────────────────────────────────────────
  KEY FACTS
 ───────────────────────────────────────────────────────
- • API key lives INSIDE ai.php only — never in page source.
-   To swap keys: edit $SERVER_KEY in ai.php. Nothing else.
- • Model choice: Settings → AI Connection (saved to nb_model.json on
-   the server; delete that file to reset to the default model).
+ • AI key is embedded in js/ai.js (DEFAULT_KEY). To swap
+   it: edit that one line, or paste your own key in
+   Settings → AI Connection (stored on your device only).
+ • Model switch: Settings → AI Connection, or terminal
+   `model gpt` / `model nemotron` (saved per device).
  • All data in localStorage on the device. Export/Import
    in Settings → Data.
  • Terminal: ` key · help · py 6*7 · ask <question>

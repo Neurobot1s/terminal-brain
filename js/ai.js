@@ -1,43 +1,42 @@
 /* ============================================================
    NeuroBot — ai.js (classic script; extends window.NB)
-   AI backend: NVIDIA NIM chat completions.
+   AI backend: NVIDIA NIM chat completions — DIRECT from the browser.
 
-   Transport strategy (fully automatic, resilient):
-     1. same-origin ai.php proxy  (PHP hosts — key stays server-side)
-        - cache-busted so the InfinityFree security check never sticks
-        - HTML/security-page responses are detected → treated as "no proxy"
-     2. direct https://integrate.api.nvidia.com  (GitHub Pages,
-        static hosts, file:// — NVIDIA sends NVCF-ALLOW-ORIGIN: *)
-        - if the browser blocks it (CORS/network), we remember for the
-          session and report it clearly instead of hanging
+   Built for static hosting (GitHub Pages): NVIDIA's integrate.api
+   endpoint sends `NVCF-ALLOW-ORIGIN: *`, so browser-direct calls are
+   allowed and no server-side proxy is needed. The API key ships in
+   this file (it's a demo key; swap it here or override it in
+   Settings → AI Connection / terminal `key`).
 
    Resilience:
-     - retries transient upstream failures (NVIDIA occasionally 503s
-       on capacity / 429 on rate limits, with backoff)
+     - retries transient failures (NVIDIA occasionally 503s on
+       capacity / 429 rate limits, with backoff)
      - falls back to a secondary model if the primary is retired (410/404)
+     - if the browser blocks the cross-origin call (rare), we remember
+       for the session and report it clearly instead of hanging
      - reasoning models' <think>…</think> blocks are stripped
      - markdown formatting stripped (plain-text UI)
-     - optional user key override (Settings → AI Connection / terminal `key`)
-       stored under a dedicated key; the embedded key is never persisted
+     - model preference persists in localStorage (terminal `model`)
    ============================================================ */
 (function () {
   "use strict";
   if (!window.NB) return;
 
-  var KEY_STORE = "nb_ai_key";          /* current key store (custom keys only) */
+  var KEY_STORE = "nb_ai_key";            /* custom key override */
   var LEGACY_KEY_STORE = "nb_gemini_key"; /* pre-rename location — imported once */
-  var MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
-  var FALLBACK_MODELS = ["openai/gpt-oss-20b"];
+  var MODEL_STORE = "nb_ai_model";        /* preferred model */
+  var MODELS = [
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "openai/gpt-oss-20b",
+  ];
   var NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-  /* Embedded key so AI works on static hosts (GitHub Pages) and file://
-     where ai.php does not exist. ai.php carries the same key server-side. */
+  /* Embedded demo key so AI works on GitHub Pages and file:// out of the box. */
   var DEFAULT_KEY = "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";
   var ASK_LIMIT = 100;
 
   var isFile = location.protocol === "file:";
-  var callCount = 0, lastError = "", lastTransport = "", lastModel = "";
-  /* session memory of what the environment supports (avoids repeat failures) */
-  var env = { proxy: isFile ? "down" : "unknown", direct: isFile ? "ok" : "unknown" };
+  var callCount = 0, lastError = "", lastModel = "";
+  var directBlocked = false; /* session memory: browser blocked the call */
 
   /* one-time import of a custom key saved under the old name */
   (function importLegacyKey() {
@@ -60,21 +59,34 @@
       else localStorage.removeItem(KEY_STORE);
     } catch (e) { /* storage unavailable — key applies to this page only */ }
     callCount = 0; lastError = "";
-    env.proxy = "unknown"; env.direct = isFile ? "ok" : "unknown";
     return true;
   };
+
+  /* model preference (localStorage — perfect for static hosting) */
+  NB.getAIModel = function () {
+    try {
+      var m = localStorage.getItem(MODEL_STORE);
+      return MODELS.indexOf(m) !== -1 ? m : MODELS[0];
+    } catch (e) { return MODELS[0]; }
+  };
+  NB.setAIModel = function (m) {
+    if (MODELS.indexOf(m) === -1) return false;
+    try { localStorage.setItem(MODEL_STORE, m); } catch (e) { /* session-only */ }
+    return true;
+  };
+  NB.AI_MODELS = MODELS;
+
   NB.geminiStatus = function () {
-    return { calls: callCount, lastError: lastError, transport: lastTransport, model: lastModel, env: NB.aiEnv() };
+    return { calls: callCount, lastError: lastError, transport: "direct", model: lastModel, env: NB.aiEnv() };
   };
   /* host-capability diagnostics for Settings → AI Connection */
   NB.aiEnv = function () {
     return {
       protocol: location.protocol,
       file: isFile,
-      proxy: env.proxy,      /* unknown | up | down */
-      direct: env.direct,    /* unknown | ok | blocked */
+      direct: directBlocked ? "blocked" : "ready",
       key: NB.getGeminiKey() ? "custom" : "embedded",
-      model: MODEL,
+      model: NB.getAIModel(),
     };
   };
 
@@ -130,23 +142,25 @@
     return false;
   }
   function upstreamMsg(r, fb) {
-    if (r.data && r.data.error) {
+    if (r && r.data && r.data.error) {
       if (r.data.error.message) return String(r.data.error.message);
       if (typeof r.data.error === "string") return r.data.error;
     }
-    return fb || "HTTP " + r.status;
+    return fb || "HTTP " + (r ? r.status : "?");
+  }
+  function blockedError() {
+    return new Error("AI transport blocked on this host (the browser blocked the call to NVIDIA). Check that you're online, or that no extension is blocking integrate.api.nvidia.com.");
   }
 
-  /* ---------- direct NVIDIA transport ---------- */
+  /* ---------- direct NVIDIA transport (the only transport) ---------- */
   function postDirect(messages, maxTokens) {
-    if (env.direct === "blocked") {
-      return Promise.reject(mark(new Error("AI transport blocked on this host (browser blocked the direct NVIDIA call and no ai.php proxy is available). Deploy ai.php on a PHP host to enable AI here."), "env"));
-    }
+    if (directBlocked) return Promise.reject(blockedError());
     var userKey = NB.getGeminiKey() || DEFAULT_KEY;
-    var idx = 0, transientTries = 0;
+    var models = [NB.getAIModel()].concat(MODELS);
+    var idx = 0, transientTries = 0, saw503 = false;
 
     function attempt() {
-      var model = [MODEL].concat(FALLBACK_MODELS)[idx];
+      var model = models[idx];
       var body = {
         model: model,
         messages: messages,
@@ -162,92 +176,41 @@
         "Authorization": "Bearer " + userKey,
       };
       return postOnce(NVIDIA_URL, headers, body, 45000).then(function (r) {
-        if (r.ok && r.data && r.data.choices) { env.direct = "ok"; lastTransport = "direct"; lastModel = model; return r; }
+        if (r.ok && r.data && r.data.choices) { lastModel = model; return r; }
         if (r.ok && !r.data) {
-          /* 2xx but not JSON — treat as unreachable upstream, retryable */
+          /* 2xx but not JSON — treat as an upstream glitch, retry */
           if (transientTries < 2) { transientTries++; return sleep(900).then(attempt); }
-          throw mark(new Error("AI service returned a non-JSON response."), "fatal");
+          throw new Error("AI service returned a non-JSON response.");
         }
         if (r.status === 410 || r.status === 404) {
-          if (idx < FALLBACK_MODELS.length) { idx++; return attempt(); }
-          throw mark(new Error("AI model unavailable (" + r.status + ") — try again later."), "fatal");
+          /* model retired — walk to the next one */
+          if (idx < models.length - 1) { idx++; return attempt(); }
+          throw new Error("AI model unavailable (" + r.status + ") — pick another in Settings → AI Connection.");
         }
         if (retryable(r.status, r.data) && transientTries < 2) {
           transientTries++;
-          var wait = r.status === 429 ? 1500 : 900;
-          if (r.status === 503) env.last503 = true;
-          return sleep(wait).then(attempt);
+          if (r.status === 503) saw503 = true;
+          return sleep(r.status === 429 ? 1500 : 900).then(attempt);
         }
-        throw mark(new Error(upstreamMsg(r, "AI service error (HTTP " + r.status + ")")), "fatal");
+        throw new Error(upstreamMsg(r, "AI service error (HTTP " + r.status + ")"));
       });
     }
 
     return attempt().catch(function (err) {
       if (err && err.network) {
-        /* TypeError from fetch: timeout, DNS, or the browser blocked the
-           cross-origin call (no ACAO on this origin). Remember for session. */
-        env.direct = "blocked";
+        /* TypeError from fetch: timeout, offline, or the browser blocked
+           the cross-origin call. Remember for the session. */
+        directBlocked = true;
         lastError = "direct transport blocked (CORS/network)";
-        throw mark(new Error("AI transport blocked on this host (browser blocked the direct NVIDIA call and no ai.php proxy is available). Deploy ai.php on a PHP host to enable AI here."), "env");
+        throw blockedError();
       }
-      if (err && err.kind !== "env") lastError = err.message;
-      throw err;
+      var m = err && err.message ? err.message : String(err);
+      if (saw503 && /503|busy|capacity/i.test(m)) m = "AI service is busy right now (NVIDIA capacity) — try again in a moment.";
+      lastError = m;
+      if (err instanceof Error) { err.message = m; throw err; }
+      throw new Error(m);
     });
   }
-
-  /* ---------- same-origin ai.php proxy transport ---------- */
-  function postProxy(messages, maxTokens) {
-    var headers = { "Content-Type": "application/json" };
-    var userKey = NB.getGeminiKey();
-    if (userKey) headers["X-NB-Key"] = userKey;
-    /* cache-bust: shared hosts aggressively cache; a fresh URL also skips
-       past any security-check interstitial cached for ai.php */
-    var url = "ai.php?cb=" + Date.now();
-    var body = { messages: messages, max_tokens: maxTokens || 900, temperature: 0.6 };
-    var transientTries = 0;
-
-    function once() {
-      return postOnce(url, headers, body, 50000).then(function (r) {
-        if (r.status === 404 || r.status === 405) return { proxyDown: true };
-        /* HTML / security-check pages: data is null and text starts with '<' */
-        if (r.data === null) {
-          if (r.text && /^\s*</.test(r.text)) return { proxyDown: true, intercepted: true };
-          if (r.ok) return { proxyDown: true, intercepted: true };
-        }
-        if (r.ok) {
-          if (r.data && r.data.choices) { env.proxy = "up"; lastTransport = "proxy"; lastModel = (r.data.model) || MODEL; return r; }
-          if (r.data && r.data.ok && r.data.service) return { proxyDown: true, intercepted: true }; /* health JSON — proxy mis-route */
-          /* JSON but unexpected shape → keep trying direct */
-          return { proxyDown: true, intercepted: true };
-        }
-        if (retryable(r.status, r.data) && transientTries < 2) {
-          transientTries++;
-          return sleep(1000).then(once);
-        }
-        throw mark(new Error(upstreamMsg(r, "AI proxy error (HTTP " + r.status + ")")), "fatal");
-      });
-    }
-    return once().catch(function (err) {
-      if (err && err.proxyDown) return err;
-      if (err && err.network) return { proxyDown: true, intercepted: true }; /* proxy unreachable → direct */
-      throw err;
-    });
-  }
-
-  /* proxy first (when it can exist), then direct NVIDIA */
-  function postAI(messages, maxTokens) {
-    if (isFile || env.proxy === "down") return postDirect(messages, maxTokens);
-    return postProxy(messages, maxTokens).then(function (r) {
-      if (r && r.proxyDown) {
-        if (env.proxy !== "up") env.proxy = "down";
-        if (r.intercepted) lastError = "ai.php not reachable on this host";
-        return postDirect(messages, maxTokens);
-      }
-      return r;
-    });
-  }
-
-  function mark(err, kind) { err.kind = kind; return err; }
 
   /* ---------- answer extraction ---------- */
   function stripMarkdown(s) {
@@ -282,8 +245,6 @@
         : "Network error — check your connection and try again.";
     }
     if (/aborted|timed out|signal is aborted/i.test(m)) return "The AI took too long to respond — try again.";
-    if (err && err.kind === "env") return m;
-    if (env.last503 && /503|busy|capacity/i.test(m)) return "AI service is busy right now (NVIDIA capacity) — try again in a moment.";
     return m;
   }
 
@@ -294,17 +255,15 @@
       return Promise.resolve({ ok: false, message: "Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset." });
     }
     callCount++;
-    env.last503 = false;
-    return postAI([{ role: "user", content: "Reply with exactly: OK" }], 256).then(function (r) {
+    return postDirect([{ role: "user", content: "Reply with exactly: OK" }], 64).then(function (r) {
       if (r && r.ok) {
         var t = extractAnswer(r.data);
         lastError = "";
-        var via = lastTransport === "direct" ? "direct connection" : "server proxy";
-        return { ok: true, message: "AI connection OK via " + via + " — model replied: " + (t || "(empty)") };
+        return { ok: true, message: "AI connection OK (direct) — model replied: " + (t || "(empty)") };
       }
-      var msg = upstreamMsg(r || {}, "HTTP " + (r ? r.status : "?"));
+      var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
       lastError = msg;
-      return { ok: false, message: friendly(mark(new Error(msg), "fatal")) };
+      return { ok: false, message: friendly(new Error(msg)) };
     }).catch(function (err) {
       lastError = err.message;
       return { ok: false, message: friendly(err) };
@@ -316,13 +275,12 @@
       return Promise.reject(new Error("Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset."));
     }
     callCount++;
-    env.last503 = false;
     var msgs = messagesFor(question);
-    return postAI(msgs, 900).then(function (r) {
+    return postDirect(msgs, 900).then(function (r) {
       if (!r || !r.ok) {
-        var msg = upstreamMsg(r || {}, "HTTP " + (r ? r.status : "?"));
+        var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
         lastError = msg;
-        throw mark(new Error("AI: " + msg), "fatal");
+        throw new Error("AI: " + msg);
       }
       var text = extractAnswer(r.data);
       if (!text) {
@@ -337,7 +295,7 @@
     });
   };
 
-  /* Ask modal UI (unchanged surface, shared by dashboard + palette) */
+  /* Ask modal UI (shared by palette + ✦ Ask buttons) */
   NB.openAskModal = function (preFill) {
     var modal = NB.openModal({ subtitle: "$ neurobot ask --ai", title: "Ask your brain" });
     modal.body.innerHTML =

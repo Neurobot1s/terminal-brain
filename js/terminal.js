@@ -354,10 +354,9 @@
       return [["t-info", "$ ai --test … pinging the model…"]];
     } },
     model: { desc: "show/set AI model", run: function (args) {
-      var MODELS = ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "openai/gpt-oss-20b"];
+      var MODELS = NB.AI_MODELS || ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "openai/gpt-oss-20b"];
       if (!args.length) {
-        var st = NB.geminiStatus ? NB.geminiStatus() : {};
-        return [["t-info", "active model: " + (st.model || MODELS[0])], ["t-dim", "  switch:  model gpt   ·   model nemotron"]];
+        return [["t-info", "active model: " + (NB.getAIModel ? NB.getAIModel() : MODELS[0])], ["t-dim", "  switch:  model gpt   ·   model nemotron"]];
       }
       var want = args.join(" ").toLowerCase();
       var target = null;
@@ -365,25 +364,10 @@
       else if (want.indexOf("nemo") !== -1 || want.indexOf("nano") !== -1) target = MODELS[0];
       else if (MODELS.indexOf(want) !== -1) target = want;
       if (!target) return [["t-err", "unknown model — try: model gpt | model nemotron"]];
-      return fetch("ai.php", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: target }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          var term = document.querySelector(".term-out");
-          if (!term) return;
-          var d = document.createElement("div");
-          d.className = "term-line " + (j.ok ? "t-ok" : "t-warn");
-          d.textContent = j.ok ? "✓ server default model set: " + j.model : "⚠ " + ((j.error && j.error.message) || "could not save (read-only fs?)") + " — AI still works with the default model";
-          term.appendChild(d);
-          term.scrollTop = term.scrollHeight;
-        })
-        .catch(function () {
-          var term = document.querySelector(".term-out");
-          if (!term) return;
-          var d = document.createElement("div");
-          d.className = "term-line t-warn";
-          d.textContent = "⚠ no ai.php on this host (static fallback) — keeping default model";
-          term.appendChild(d);
-        });
+      var ok = NB.setAIModel(target);
+      return ok
+        ? [["t-ok", "✓ model set on this device: " + target], ["t-dim", "  takes effect on your next ask"]]
+        : [["t-err", "could not save (storage blocked?) — keeping current model"]];
     } },
     sudo: { desc: "nice try", run: function () { return [["t-err", "sudo: permission denied — this brain belongs to tanishq 😄"]]; } },
   };

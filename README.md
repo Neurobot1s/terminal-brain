@@ -6,28 +6,28 @@ answers using your own memories as context.
 
 **Crafted by TANISHQ LALWANI** ✨
 
-Pure vanilla: HTML + CSS + JS. No build step, no frameworks, no backend, no auth.
+Pure vanilla: HTML + CSS + JS. No build step, no frameworks, no backend, no auth —
+**perfect for GitHub Pages**.
 
 ## Run it
 
 Just open `index.html` in a browser — that's it. It also works from any static host
-(file://, GitHub Pages, InfinityFree, Netlify, …) because all scripts are classic
-`<script>` tags, not ES modules.
+(file://, GitHub Pages, Netlify, …) because all scripts are classic
+`<script>` tags, not ES modules, and all asset paths are relative.
 
-## Deploy to InfinityFree (via GitHub)
+## Deploy to GitHub Pages
 
-1. Push this folder to a GitHub repo (`.env*`, `tests/` and `README.md` are
-gitignored or dev-only — don't ship them).
-2. In InfinityFree's control panel, open **File Manager → htdocs**.
-3. Upload everything:
-   - `index.html`, `ai.php`, `.htaccess`, `logo.svg`
-   - `styles.css`, `styles.polish.css`, `styles.perf.css`
-   - the `js/` folder (all 11 files)
-4. Visit your domain.
+1. Push this repo to GitHub (`.env*` and `tests/` are gitignored/dev-only).
+2. Repo → **Settings → Pages** → Source: **Deploy from a branch** →
+   Branch: `main` / `/(root)` → Save.
+3. Your site is live at `https://<user>.github.io/<repo>/` in a minute or two.
 
-**Check AI is alive:** open `https://your-domain/ai.php` in a browser — you
-should see `{"ok":true,...}`. That confirms PHP + the proxy work. Then in the
-app, press `` ` `` and run `aitest`.
+No build step, no workflow file, no server needed — the AI calls NVIDIA
+directly from the browser (the API allows cross-origin requests), so a
+pure-static host is all it takes.
+
+**Check AI works:** open the site, press `` ` `` and run `aitest` — you should
+see `✓ AI connection OK (direct) — model replied: OK`.
 
 ## Files
 
@@ -36,18 +36,16 @@ index.html            app shell (sidebar, topbar, view container)
 styles.css            premium dark theme, glassmorphism, fully responsive
 styles.polish.css     polish layer (shortcuts, drag states, palette nav)
 styles.perf.css       performance overrides, click effect, responsive fixes
-ai.php                AI proxy — forwards Ask requests to NVIDIA, key stays server-side
-.htaccess             default document + cache rules (InfinityFree-friendly)
 logo.svg              favicon/logo
 js/
   core.js             localStorage store, helpers, seed data
   core-part2.js       CRUD, modals, capture forms, neural graph (SVG)
   prefs.js            theme / density / motion preferences
-  ai.js               "Ask your brain" — calls ai.php (NVIDIA NIM)
-  views-dashboard.js  hero, ask box, stat cards, graph, pinned, quick capture
+  ai.js               "Ask your brain" — browser-direct calls to NVIDIA NIM
+  views-dashboard.js  hero, ask box (inline AI chat), stat cards, graph, pinned, quick capture
   views-collections.js  My Brain / Notes / Knowledge / Goals
   views-kanban.js     Ideas board (drag & drop between columns)
-  views-misc.js       Connections, Settings (import/export), Credits / Live / NeuroVision
+  views-misc.js       Connections, Settings (import/export, AI panel), Credits / Live / NeuroVision
   main.js             hash router, palette (Ctrl+K + arrows), shortcuts (?), g-nav
   terminal.js         in-app console: help, ls, find, cd, new, ask, py, theme, stats…
   fx.js               blue paper-pop click effect
@@ -68,13 +66,14 @@ js/
   reset demo / erase all, privacy and about.
 - **Ask (AI)** — the dashboard box is a real inline chat: answers appear as
   bubbles right under the input. Every page's ✦ Ask button and the Ctrl+K
-  palette feed your real memories to NVIDIA NIM (`nemotron-3-nano`) through
-  `ai.php`, so the API key never appears in page source. Requires the site to
-  be hosted with PHP enabled (InfinityFree supports it); static hosts fall
-  back to a direct NVIDIA connection automatically. 100 asks per session.
-- **AI Connection panel (Settings)** — switch the model server-side
-  (saved via PATCH to `nb_model.json`), test the connection, see live
-  transport diagnostics (proxy / direct / key in use), optional key override.
+  palette feed your real memories to NVIDIA NIM (`nemotron-3-nano`) with
+  **browser-direct calls** — no server, no PHP, works on GitHub Pages.
+  The embedded key is a demo key; override it in Settings → AI Connection
+  or the terminal `key` command (stored on your device only).
+  100 asks per session.
+- **AI Connection panel (Settings)** — switch the model (saved per-device
+  via localStorage), test the connection, see live diagnostics
+  (protocol / key in use / model), optional key override.
 - **Extras** — Credits popup (crafted by Tanishq Lalwani), Live voice modal
   (coming soon), brain-health indicator, collapsible sidebar, fully responsive
   with mobile drawer, toasts.
@@ -104,8 +103,10 @@ Don't upload the `tests/` folder to htdocs — it's for development only.
 ## Notes
 
 - All data lives in `localStorage` on the device — nothing is sent anywhere except
-  your question + relevant memory text when you use Ask.
-- The AI key is stored only inside `ai.php` on the server. To swap keys, edit
-  `ai.php` — no other files need changing. A key override can also be set in
-  Settings → AI Connection or with the terminal `key` command.
+  your question + relevant memory text when you use Ask (which goes straight
+to NVIDIA's API over HTTPS from your browser).
+- The AI key is embedded in `js/ai.js` (demo key). To swap it, edit `DEFAULT_KEY`
+  there, or paste your own key in Settings → AI Connection — overrides are
+  stored only on your device. A key override can also be set with the terminal
+  `key` command.
 - The neural graph is a visual prototype; connections are illustrative, not AI-generated.
