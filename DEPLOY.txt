@@ -21,10 +21,13 @@ SHIP these files (everything in the repo root):
 
 DO NOT SHIP:  tests/  .env*  node_modules/  .git*
 
-No PHP, no server, no build step — AI calls go from the
-browser to OpenRouter (Access-Control-Allow-Origin: *),
-which serves the NVIDIA Nemotron models. Works on any
-pure-static host, including GitHub Pages.
+No PHP, no server, no build step — AI calls go from the browser to
+NVIDIA's API (integrate.api.nvidia.com) with automatic relay fallback:
+  1. your own relay (Settings → AI Connection, optional — see
+     nvidia-relay.js for a free 2-minute Cloudflare Worker deploy)
+  2. direct call
+  3. public CORS relays (no setup needed, works on GitHub Pages)
+The first route that answers is remembered for next time.
 
 ───────────────────────────────────────────────────────
  AFTER DEPLOY — 30-SECOND CHECK
@@ -34,9 +37,10 @@ pure-static host, including GitHub Pages.
    (stale look? Ctrl+Shift+R to bypass cache)
 
 2) AI answers?   open the site, press ` , type:  aitest
-   Expect: "✓ AI connection OK (OpenRouter → nvidia/…)"
+   Expect: "✓ AI connection OK (NVIDIA → nvidia/… via …)"
    If it says no key: Settings → AI Connection → paste a
-   FREE key from openrouter.ai/keys (stored on-device only).
+   FREE key from build.nvidia.com (starts with nvapi-,
+   stored on-device only).
 
    Offline check: open index.html straight from disk
    (file://) — everything except Ask runs locally.
@@ -44,13 +48,16 @@ pure-static host, including GitHub Pages.
 ───────────────────────────────────────────────────────
  KEY FACTS
 ───────────────────────────────────────────────────────
- • AI models: NVIDIA Nemotron only, via OpenRouter
-   (default: nemotron-3.5-lightning:free). No key is
+ • AI models: NVIDIA Nemotron only, via NVIDIA's own API
+   (default: nemotron-3.5-lightning-30b-a3b). No key is
    embedded — paste your free key once in Settings →
-   AI Connection or terminal:  key sk-or-…
+   AI Connection or terminal:  key nvapi-…
  • Model switch: Settings → AI Connection, or terminal
    `model lightning` / `model super` / `model nano`
    (saved per device).
+ • Relay (optional, for max reliability): deploy
+   nvidia-relay.js to Cloudflare Workers and paste the URL
+   in Settings → AI Connection.
  • All data in localStorage on the device. Export/Import
    in Settings → Data.
  • Terminal: ` key · help · py 6*7 · ask <question>

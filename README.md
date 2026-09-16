@@ -4,7 +4,7 @@
 
 A polished, personal second-brain app: capture notes, ideas, knowledge and goals,
 see them on a neural knowledge graph, and **ask your brain questions** — NVIDIA
-Nemotron (via OpenRouter) answers using your own memories as context.
+Nemotron models (direct from NVIDIA's API) answer using your own memories as context.
 
 **Crafted by TANISHQ LALWANI** ✨
 
@@ -24,14 +24,16 @@ Just open `index.html` in a browser — that's it. It also works from any static
    Branch: `main` / `/(root)` → Save.
 3. Your site is live at `https://<user>.github.io/<repo>/` in a minute or two.
 
-No build step, no workflow file, no server needed — the AI calls OpenRouter
-(which serves the NVIDIA Nemotron models) directly from the browser
-(`Access-Control-Allow-Origin: *`), so a pure-static host is all it takes.
+No build step, no workflow file, no server needed — the AI calls NVIDIA NIM
+(`integrate.api.nvidia.com`) from the browser. NVIDIA's endpoint only allows
+browser calls from build.nvidia.com, so when the direct call is browser-blocked,
+NeuroBot automatically walks a small relay chain (your own relay if configured,
+then public CORS relays) — the first route that answers wins and is remembered.
 
 **Check AI works:** open the site, press `` ` `` and run `aitest` — you should
-see `✓ AI connection OK (OpenRouter → nvidia/…)`. If it reports no key, paste a
-FREE one from [openrouter.ai/keys](https://openrouter.ai/keys) in
-Settings → AI Connection (stored on your device only).
+see `✓ AI connection OK (NVIDIA → nvidia/… via …)`. If it reports no key, paste a
+FREE one from [build.nvidia.com](https://build.nvidia.com) (starts with `nvapi-`)
+in Settings → AI Connection (stored on your device only).
 
 ## Files
 
@@ -45,7 +47,7 @@ js/
   core.js             localStorage store, helpers, seed data
   core-part2.js       CRUD, modals, capture forms, neural graph (SVG)
   prefs.js            theme / density / motion preferences
-  ai.js               "Ask your brain" — browser-direct calls to OpenRouter (NVIDIA models)
+  ai.js               "Ask your brain" — NVIDIA NIM calls with relay fallback chain
   views-dashboard.js  hero, ask box (inline AI chat), stat cards, graph, pinned, quick capture
   views-collections.js  My Brain / Notes / Knowledge / Goals
   views-kanban.js     Ideas board (drag & drop between columns)
@@ -70,13 +72,15 @@ js/
   reset demo / erase all, privacy and about.
 - **Ask (AI)** — the dashboard box is a real inline chat: answers appear as
   bubbles right under the input. Every page's ✦ Ask button and the Ctrl+K
-  palette feed your real memories to **NVIDIA Nemotron via OpenRouter** with
-  **browser-direct calls** — no server, no PHP, works on GitHub Pages.
+  palette feed your real memories to **NVIDIA Nemotron models via NVIDIA's API**
+  with **browser-direct calls + automatic relay fallback** — no server required,
+  works on GitHub Pages.
   Paste your free key in Settings → AI Connection or the terminal `key`
   command (stored on your device only). 100 asks per session.
 - **AI Connection panel (Settings)** — switch the model (saved per-device
   via localStorage), test the connection, see live diagnostics
-  (protocol / key in use / model), optional key override.
+  (protocol / key in use / model / route), optional key override, optional
+  self-hosted relay URL.
 - **Extras** — Credits popup (crafted by Tanishq Lalwani), Live voice modal
   (coming soon), brain-health indicator, collapsible sidebar, fully responsive
   with mobile drawer, toasts.
@@ -92,7 +96,7 @@ js/
 
 ## Tests
 
-Optional (not needed to run the app): two jsdom test suites verify the app really
+Optional (not needed to run the app): jsdom test suites verify the app really
 boots and every route renders:
 
 ```bash
@@ -105,8 +109,9 @@ Don't upload the `tests/` folder to htdocs — it's for development only.
 
 ## Notes- All data lives in `localStorage` on the device — nothing is sent anywhere except
   your question + relevant memory text when you use Ask (which goes from your
-  browser to OpenRouter over HTTPS, which routes to NVIDIA).
-- No key is embedded anywhere. Paste your free OpenRouter key in
+  browser to NVIDIA's API over HTTPS, optionally through a relay tunnel).
+- No key is embedded anywhere. Paste your free NVIDIA key (nvapi-) in
   Settings → AI Connection or the terminal `key` command — it is stored only
   on your device (localStorage).
-- The neural graph is a visual prototype; connections are illustrative, not AI-generated.
+- **AI transport** — NVIDIA NIM directly (with relay fallback). See
+  `nvidia-relay.js` for the optional 2-minute self-hosted relay deploy.

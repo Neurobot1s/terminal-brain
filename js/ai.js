@@ -1,75 +1,96 @@
 /* ============================================================
    NeuroBot — ai.js (classic script; extends window.NB)
-   AI backend: NVIDIA models via OpenRouter, called directly
-   from the browser.
+   AI backend: NVIDIA NIM (integrate.api.nvidia.com) — NVIDIA
+   models ONLY, called with your own free nvapi key.
 
-   WHY OpenRouter: GitHub Pages has no server, and NVIDIA's
-   integrate.api endpoint only allows cross-origin browser
-   calls from build.nvidia.com — from any other origin the
-   browser blocks the response (no Access-Control-Allow-Origin).
-   OpenRouter sends `Access-Control-Allow-Origin: *`, so a
-   pure-static site can talk to it, and it hosts NVIDIA models
-   on its free tier.
+   WHY A RELAY: GitHub Pages has no server, and NVIDIA's
+   integrate.api endpoint only sends Access-Control-Allow-Origin
+   for build.nvidia.com — from any other origin the browser
+   blocks the response. So requests try, in order:
+     1. your own relay, if you deployed one (fastest, reliable)
+     2. direct call (works where NVIDIA allows it / extensions)
+     3. public CORS relays (works from GitHub Pages, no setup)
+   Whichever route answers first is remembered for the session
+   (and the working relay is saved in localStorage).
 
-   Setup: create a FREE key at openrouter.ai/keys and paste it
-   in Settings → AI Connection (or terminal `key <sk-or-…>`).
+   Setup: create a FREE key at build.nvidia.com (nvapi-…) and
+   paste it in Settings → AI Connection (or terminal `key nvapi-…`).
    It is stored only in this browser's localStorage.
 
    Resilience:
      - retries transient failures with backoff
-     - walks to the next free model on 404/410 (model retired)
-       AND on 429 (free-tier rate limit) — 3 free models available
+     - walks to the next model on 404/410 (model retired)
+       and on 429 (rate limit) — 3 Nemotron models available
      - reasoning models' <think>…</think> blocks are stripped
      - markdown formatting stripped (plain-text UI)
-     - model preference persists in localStorage (terminal `model`)
+     - model + relay preferences persist in localStorage
    ============================================================ */
 (function () {
   "use strict";
   if (!window.NB) return;
 
-  var KEY_STORE = "nb_ai_key";     /* OpenRouter key override */
-  var MODEL_STORE = "nb_ai_model"; /* preferred model */
+  var KEY_STORE = "nb_ai_key";      /* NVIDIA nvapi key */
+  var MODEL_STORE = "nb_ai_model";  /* preferred model */
+  var RELAY_STORE = "nb_ai_relay";  /* custom relay base URL (your own worker) */
+  var ROUTE_STORE = "nb_ai_route";  /* remembered winning route */
+
+  /* Live NVIDIA NIM slugs (verified against /v1/models on deploy day) */
   var MODELS = [
-    "nvidia/nemotron-3.5-lightning:free",                          /* NVIDIA — default */
-    "nvidia/nemotron-3-super-120b-a12b:free",                      /* NVIDIA — fallback */
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning-20260428:free", /* NVIDIA — last resort */
+    "nvidia/nemotron-3.5-lightning-30b-a3b",           /* NVIDIA — default (fast) */
+    "nvidia/nemotron-3-super-120b-a12b",               /* NVIDIA — fallback (stronger) */
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",   /* NVIDIA — last resort */
   ];
-  var OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+  var NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+
+  /* Public CORS relays used only if the direct call is browser-blocked.
+     They forward method, Authorization header and JSON body untouched. */
+  var RELAYS = [
+    { name: "corsproxy.io",  url: function (target) { return "https://corsproxy.io/?url=" + encodeURIComponent(target); } },
+    { name: "allorigins",    url: function (target) { return "https://api.allorigins.win/raw?url=" + encodeURIComponent(target); } },
+  ];
   var ASK_LIMIT = 100;
 
   var isFile = location.protocol === "file:";
-  var callCount = 0, lastError = "", lastModel = "";
+  var callCount = 0, lastError = "", lastModel = "", lastRoute = "";
   var lastBlocked = ""; /* session memory of why a request failed hard */
 
-  NB.getAIKey = function () {
-    try { return localStorage.getItem(KEY_STORE) || ""; } catch (e) { return ""; }
-  };
+  function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* session-only */ } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+  NB.getAIKey = function () { return lsGet(KEY_STORE); };
   NB.setAIKey = function (k) {
     k = String(k || "").trim();
-    try {
-      if (k) localStorage.setItem(KEY_STORE, k);
-      else localStorage.removeItem(KEY_STORE);
-    } catch (e) { /* storage unavailable — key applies to this page only */ }
+    if (k) lsSet(KEY_STORE, k); else lsDel(KEY_STORE);
     callCount = 0; lastError = "";
     return true;
   };
 
   /* model preference (localStorage — perfect for static hosting) */
   NB.getAIModel = function () {
-    try {
-      var m = localStorage.getItem(MODEL_STORE);
-      return MODELS.indexOf(m) !== -1 ? m : MODELS[0];
-    } catch (e) { return MODELS[0]; }
+    var m = lsGet(MODEL_STORE);
+    return MODELS.indexOf(m) !== -1 ? m : MODELS[0];
   };
   NB.setAIModel = function (m) {
     if (MODELS.indexOf(m) === -1) return false;
-    try { localStorage.setItem(MODEL_STORE, m); } catch (e) { /* session-only */ }
+    lsSet(MODEL_STORE, m);
     return true;
   };
   NB.AI_MODELS = MODELS;
 
+  /* Custom relay (your own deployed worker). Empty string = auto. */
+  NB.getAIRelay = function () { return lsGet(RELAY_STORE).replace(/\/+$/, ""); };
+  NB.setAIRelay = function (u) {
+    u = String(u || "").trim().replace(/\/+$/, "");
+    if (u && !/^https?:\/\//i.test(u)) return false;
+    if (u) lsSet(RELAY_STORE, u); else lsDel(RELAY_STORE);
+    lsDel(ROUTE_STORE); /* forget the old winning route — new relay first */
+    lastRoute = ""; lastBlocked = "";
+    return true;
+  };
+
   NB.aiStatus = function () {
-    return { calls: callCount, lastError: lastError, transport: "openrouter", model: lastModel, env: NB.aiEnv() };
+    return { calls: callCount, lastError: lastError, transport: "nvidia", route: lastRoute, model: lastModel, env: NB.aiEnv() };
   };
   /* host-capability diagnostics for Settings → AI Connection */
   NB.aiEnv = function () {
@@ -77,7 +98,9 @@
       protocol: location.protocol,
       file: isFile,
       direct: lastBlocked ? "blocked: " + lastBlocked : "ready",
-      key: NB.getAIKey() ? "custom" : "missing",
+      relay: NB.getAIRelay() || "(auto)",
+      route: lastRoute || "(not tried yet)",
+      key: NB.getAIKey() ? (NB.getAIKey().indexOf("nvapi-") === 0 ? "nvapi" : "custom") : "missing",
       model: NB.getAIModel(),
     };
   };
@@ -128,27 +151,56 @@
   }
 
   function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+
+  /* NVIDIA returns {detail: "..."} (problem+json), OpenAI-style {error:{message}},
+     and relays may return their own text — handle all shapes. */
   function upstreamMsg(r, fb) {
-    if (r && r.data && r.data.error) {
-      if (r.data.error.message) return String(r.data.error.message);
-      if (typeof r.data.error === "string") return r.data.error;
+    if (r && r.data) {
+      var d = r.data;
+      if (d.error) {
+        if (d.error.message) return String(d.error.message);
+        if (typeof d.error === "string") return d.error;
+      }
+      if (d.detail) return String(d.detail);
+      if (d.message) return String(d.message);
     }
+    if (r && !r.data && r.text && r.text.length < 200) return String(r.text).trim() || fb || "";
     return fb || "HTTP " + (r ? r.status : "?");
   }
 
   function noKeyError() {
-    return new Error("No OpenRouter key yet — get a FREE one at openrouter.ai/keys, then paste it in Settings → AI Connection (or terminal: key sk-or-…).");
+    return new Error("No NVIDIA key yet — get a FREE one at build.nvidia.com (starts with nvapi-), then paste it in Settings → AI Connection (or terminal: key nvapi-…).");
   }
 
-  /* ---------- OpenRouter transport (browser-direct, CORS-allowed) ---------- */
+  /* ---------- NVIDIA transport (direct → custom relay → public relays) ---------- */
   function postAI(messages, maxTokens) {
     var userKey = NB.getAIKey();
     if (!userKey) return Promise.reject(noKeyError());
 
+    /* A pasted OpenRouter key will never work against NVIDIA — say so immediately. */
+    if (/^sk-or-/i.test(userKey)) {
+      return Promise.reject(new Error("That looks like an OpenRouter key (sk-or-…). NeuroBot now uses NVIDIA directly — get a free nvapi- key at build.nvidia.com."));
+    }
+
     var models = [NB.getAIModel()].concat(MODELS);
     var idx = 0, transientTries = 0;
+    var customRelay = NB.getAIRelay();
+
+    /* route list: [ {name, makeUrl} … ] — first entry is tried first.
+       A route that answered successfully before jumps the queue. */
+    var routes = [];
+    if (customRelay) routes.push({ name: "your relay", url: function () { return customRelay; } });
+    var remembered = lsGet(ROUTE_STORE);
+    routes.push({ name: "direct", url: function () { return NVIDIA_URL; } });
+    RELAYS.forEach(function (r) { if (r.name === remembered) routes.unshift(r); else routes.push(r); });
+    var routeIdx = 0;
 
     function attempt() {
+      if (routeIdx >= routes.length) {
+        lastBlocked = "all routes";
+        throw new Error("Could not reach NVIDIA from this browser (all routes blocked). Deploy your own relay — see nvidia-relay.js in the repo — and set it in Settings → AI Connection.");
+      }
+      var route = routes[routeIdx];
       var model = models[idx];
       var body = {
         model: model,
@@ -159,31 +211,43 @@
       var headers = {
         "Content-Type": "application/json",
         "Authorization": "Bearer " + userKey,
-        "X-Title": "NeuroBot",
+        "Accept": "application/json",
       };
-      return postOnce(OPENROUTER_URL, headers, body, 45000).then(function (r) {
-        if (r.ok && r.data && r.data.choices) { lastModel = model; lastBlocked = ""; return r; }
-        if (r.status === 401 || r.status === 403) {
-          throw new Error("OpenRouter rejected the key (" + r.status + ") — check it in Settings → AI Connection.");
+      return postOnce(route.url(NVIDIA_URL), headers, body, 45000).then(function (r) {
+        if (r.ok && r.data && r.data.choices) {
+          lastModel = model; lastRoute = route.name; lastBlocked = "";
+          lsSet(ROUTE_STORE, route.name); /* remember the winning route */
+          return r;
         }
-        /* model retired OR free-tier rate limit/quota → walk to the next free model */
-        if ((r.status === 410 || r.status === 404 || r.status === 429 || r.status === 402) && idx < models.length - 1) {
+        /* relay itself refused (Cloudflare block page, HTML error…) → next route */
+        if (r.data === null && (r.status === 403 || r.status === 429 || r.status >= 500)) {
+          routeIdx++;
+          return sleep(300).then(attempt);
+        }
+        if (r.status === 401 || r.status === 403) {
+          throw new Error("NVIDIA rejected the key (" + r.status + ") — check it in Settings → AI Connection. Free keys: build.nvidia.com");
+        }
+        /* model retired OR rate limit/quota → walk to the next model */
+        if ((r.status === 410 || r.status === 404 || r.status === 429) && idx < models.length - 1) {
           idx++;
           return sleep(r.status === 429 ? 800 : 0).then(attempt);
         }
-        if ((r.status === 429 || r.status >= 500 || r.ok) && transientTries < 2) {
+        if ((r.status === 429 || r.status >= 500) && transientTries < 2) {
           transientTries++;
           return sleep(r.status === 429 ? 1500 : 900).then(attempt);
         }
         throw new Error(upstreamMsg(r, "AI service error (HTTP " + r.status + ")"));
+      }).catch(function (err) {
+        /* network/CORS failure on this route → try the next route */
+        if (err && err.network) {
+          routeIdx++;
+          return sleep(200).then(attempt);
+        }
+        throw err;
       });
     }
 
     return attempt().catch(function (err) {
-      if (err && err.network) {
-        lastBlocked = "network/CORS";
-        throw new Error("Network error reaching the AI — check your connection and try again.");
-      }
       var m = err && err.message ? err.message : String(err);
       lastError = m;
       if (err instanceof Error) { err.message = m; throw err; }
@@ -241,7 +305,7 @@
       if (r && r.ok) {
         var t = extractAnswer(r.data);
         lastError = "";
-        return { ok: true, message: "AI connection OK (OpenRouter → " + lastModel + ") — model replied: " + (t || "(empty)") };
+        return { ok: true, message: "AI connection OK (NVIDIA → " + lastModel + " via " + lastRoute + ") — model replied: " + (t || "(empty)") };
       }
       var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
       lastError = msg;

@@ -208,7 +208,7 @@
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
         ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query the AI"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
-        ["key / aitest / model", "AI key (OpenRouter), connection test, model switch"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
+        ["key / aitest / model", "AI key (NVIDIA), connection test, model switch"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
       ];
       rows.forEach(function (r) { out.push(["t-cmd", "  " + pad(r[0], 18) + " " + r[1]]); });
@@ -334,7 +334,7 @@
     key: { desc: "set/view AI key override", run: function (args) {
       if (!args.length) {
         var k = NB.getAIKey();
-        return [["t-info", "key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "none — get a free one at openrouter.ai/keys")], ["t-dim", "  set one:  key sk-or-…   ·   clear:  key clear"]];
+        return [["t-info", "key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "none — get a free one at build.nvidia.com (nvapi-…)")], ["t-dim", "  set one:  key nvapi-…   ·   clear:  key clear"]];
       }
       var v = args.join("");
       if (v.toLowerCase() === "clear") { NB.setAIKey(""); return [["t-ok", "key cleared"]]; }

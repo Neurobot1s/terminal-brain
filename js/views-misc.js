@@ -49,11 +49,12 @@
         '<div class="row-between"><span>Weekly digest (demo)</span><label class="switch"><input type="checkbox" id="set-digest"><span class="slider"></span></label></div>' +
       "</section>" +
       '<section class="panel"><h3>AI Connection</h3>' +
-        '<p class="muted">The AI answers questions using your memories. Requests go from your browser to OpenRouter (which hosts the NVIDIA model) — works on GitHub Pages with no server. Get a <strong>free key</strong> at <a class="panel-link" href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a> and paste it below — it stays on this device.</p>' +
+        '<p class="muted">The AI answers questions using your memories, powered by <strong>NVIDIA Nemotron</strong> (direct from NVIDIA\'s API). Get a <strong>free key</strong> at <a class="panel-link" href="https://build.nvidia.com" target="_blank" rel="noopener">build.nvidia.com</a> (starts with nvapi-) and paste it below — it stays on this device.</p>' +
         '<div class="ai-model-row"><label class="muted-xs" for="ai-model">Model</label><select id="ai-model"></select>' +
           '<button class="btn btn-outline btn-sm" id="ai-model-save">Use this model</button></div>' +
         '<div class="row-between"><span>Custom key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
-        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Paste your free OpenRouter key (sk-or-…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Paste your free NVIDIA key (nvapi-…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="ai-key-row"><input id="ai-relay-input" class="key-input" placeholder="Advanced: own relay URL (optional — auto otherwise)" autocomplete="off" spellcheck="false" /></div>' +
         '<div class="ai-key-row">' +
           '<button class="btn btn-primary btn-sm" id="ai-key-save">Save key</button>' +
           '<button class="btn btn-outline btn-sm" id="ai-key-reset">Clear override</button>' +
@@ -70,7 +71,7 @@
         '<input type="file" id="set-import-file" accept=".json,application/json" style="display:none" />' +
       "</section>" +
       '<section class="panel"><h3>Privacy</h3>' +
-        '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends your question + relevant memory text straight to NVIDIA\'s model via OpenRouter over HTTPS.</p>' +
+        '<p class="muted">Everything is stored only in your browser (localStorage). Nothing leaves your device — except when you use <strong>Ask</strong>, which sends your question + relevant memory text from your browser straight to NVIDIA\'s API over HTTPS.</p>' +
       "</section>" +
       '<section class="panel"><h3>About NeuroBot</h3>' +
         '<p class="muted">NeuroBot — Your Second Brain.</p>' +
@@ -102,7 +103,18 @@
     $("#ai-key-reset", root).addEventListener("click", function () {
       NB.setAIKey("");
       keyPrev.textContent = maskKey(NB.getAIKey());
-      toast("Key cleared — paste an OpenRouter key to use Ask.", "warn");
+      toast("Key cleared — paste an NVIDIA key to use Ask.", "warn");
+      refreshEnv();
+    });
+
+    /* optional custom relay (your own deployed worker — see nvidia-relay.js) */
+    var relayInput = $("#ai-relay-input", root);
+    relayInput.value = NB.getAIRelay ? NB.getAIRelay() : "";
+    relayInput.addEventListener("change", function () {
+      var v = relayInput.value.trim();
+      if (!v) { NB.setAIRelay(""); toast("Relay cleared — using automatic routing."); refreshEnv(); return; }
+      var ok = NB.setAIRelay(v);
+      toast(ok ? "Relay saved — it will be tried first." : "Invalid URL — must start with http(s)://", ok ? "ok" : "err");
       refreshEnv();
     });
 
@@ -124,8 +136,9 @@
     modelSel.value = NB.getAIModel ? NB.getAIModel() : (NB.AI_MODELS || [])[0];
     function refreshEnv() {
       var e = NB.aiEnv ? NB.aiEnv() : {};
-      envOut.innerHTML = "env · transport: <b>OpenRouter (browser-direct)</b> · browser: <b>" + NB.esc(e.protocol || "?") +
-        "</b> · key: <b>" + NB.esc(e.key || "?") + "</b> · model: <b>" + NB.esc(modelLabel(e.model || "")) + "</b>";
+      envOut.innerHTML = "env · transport: <b>NVIDIA NIM (direct)</b> · browser: <b>" + NB.esc(e.protocol || "?") +
+        "</b> · key: <b>" + NB.esc(e.key || "?") + "</b> · model: <b>" + NB.esc(modelLabel(e.model || "")) + "</b>" +
+        " · route: <b>" + NB.esc(e.route || "(not tried yet)") + "</b>";
       var st = NB.aiStatus ? NB.aiStatus() : {};
       if (st.lastError) envOut.innerHTML += " · last error: <b>" + NB.esc(st.lastError) + "</b>";
     }

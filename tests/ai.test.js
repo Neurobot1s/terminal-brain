@@ -1,10 +1,10 @@
 /*
  * NeuroBot AI transport test — this one makes REAL network calls.
- * It proves the browser-direct OpenRouter transport works end to end:
+ * It proves the browser-direct NVIDIA transport works end to end:
  *   1. load js/ai.js in a jsdom page (simulates GitHub Pages)
  *   2. ask a question through NB.askAI()
- *   3. expect a real answer fetched from OpenRouter (NVIDIA model)
- * Requires an OpenRouter key: set OPENROUTER_KEY env var, or paste a
+ *   3. expect a real answer fetched from NVIDIA NIM (Nemotron model)
+ * Requires an NVIDIA key: set NVIDIA_KEY env var (nvapi-…), or paste a
  * key into localStorage under "nb_ai_key" before running.
  * Skipped automatically if jsdom, the key, or the network is unavailable.
  */
@@ -28,8 +28,9 @@ vc.on("error", (m) => errors.push("console.error: " + m));
 let html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8").replace(/<link[^>]*>/g, "");
 
 const dom = new JSDOM(html, {
-  /* NOTE: a plain http origin — there is NO ai.php here, so the proxy
-     request 404s and ai.js must fall back to direct NVIDIA transport. */
+  /* plain http origin — NVIDIA's real API has a CORS allowlist here, so the
+     direct call will fail and ai.js must walk the relay chain (or fail with
+     a friendly all-routes-blocked error, which is also correct behavior). */
   url: "http://localhost/index.html",
   runScripts: "outside-only",
   pretendToBeVisual: true,
@@ -53,8 +54,8 @@ for (const f of ["js/core.js", "js/core-part2.js", "js/ai.js"]) {
 
 const NB = window.NB;
 /* seed a key from the environment if provided (static hosts have none embedded) */
-if (process.env.OPENROUTER_KEY) {
-  window.localStorage.setItem("nb_ai_key", process.env.OPENROUTER_KEY);
+if (process.env.NVIDIA_KEY) {
+  window.localStorage.setItem("nb_ai_key", process.env.NVIDIA_KEY);
 }
 const hasKey = !!NB.getAIKey();
 const checks = [];
@@ -64,9 +65,9 @@ function check(label, ok, extra) {
 
 (async () => {
   if (!hasKey) {
-    console.log("SKIP: no OpenRouter key (set OPENROUTER_KEY env var). The UI shows a friendly no-key message instead.");
+    console.log("SKIP: no NVIDIA key (set NVIDIA_KEY env var). The UI shows a friendly no-key message instead.");
     const r = await NB.testAI();
-    check("no-key message is friendly", r && r.ok === false && /openrouter\.ai\/keys/.test(r.message), r ? r.message : "no result");
+    check("no-key message is friendly", r && r.ok === false && /build\.nvidia\.com/.test(r.message), r ? r.message : "no result");
     for (const [l, r2] of checks) console.log((r2 === "OK" ? " ✓" : " ✗"), l, r2 === "OK" ? "" : "→ " + r2);
     process.exit(checks.some((c) => c[1] !== "OK") ? 1 : 0);
     return;
@@ -76,7 +77,7 @@ function check(label, ok, extra) {
   try {
     const r = await NB.testAI();
     check("testAI ok", r && r.ok === true, r ? String(r.message).slice(0, 160) : "no result");
-    check("reply mentions transport", r && /OpenRouter/.test(r.message), r ? r.message : "");
+    check("reply mentions NVIDIA", r && /NVIDIA/.test(r.message), r ? r.message : "");
   } catch (e) {
     check("testAI ok", false, e.message);
   }
