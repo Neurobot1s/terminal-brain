@@ -190,7 +190,9 @@
         if (retryable(r.status, r.data) && transientTries < 2) {
           transientTries++;
           if (r.status === 503) saw503 = true;
-          return sleep(r.status === 429 ? 1500 : 900).then(attempt);
+          /* 429 = rolling request window: wait longer so the retry
+             actually lands inside a fresh window instead of burning it */
+          return sleep(r.status === 429 ? 3500 : 900).then(attempt);
         }
         throw new Error(upstreamMsg(r, "AI service error (HTTP " + r.status + ")"));
       });
@@ -245,6 +247,10 @@
         : "Network error — check your connection and try again.";
     }
     if (/aborted|timed out|signal is aborted/i.test(m)) return "The AI took too long to respond — try again.";
+    /* NVIDIA per-key rolling window ("Worker local total request limit reached") */
+    if (/ResourceExhausted|request limit|quota/i.test(m)) {
+      return "AI rate limit reached on this key — wait about a minute and try again. (Free NVIDIA keys allow ~16 requests per short window.)";
+    }
     return m;
   }
 
