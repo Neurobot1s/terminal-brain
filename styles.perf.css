@@ -44,6 +44,15 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
+/* Jank fix: `background-attachment: fixed` re-paints the whole page
+   gradient on every scroll frame on many GPUs. Compositing a normal
+   attachment with the page background is dramatically cheaper. */
+body { background-attachment: scroll !important; }
+
+/* Mobile polish + speed: remove the grey flash and the ~300ms tap delay. */
+html { -webkit-tap-highlight-color: transparent; }
+button, a, .btn, .row-btn, .mem-card, .qc-btn, .stat-card, .nav a { touch-action: manipulation; }
+
 /* ═══════════════════════════════════════════════════════════════
    3) RESPONSIVE FIXES — tablet + phone spacing & grids
    ═══════════════════════════════════════════════════════════════ */

@@ -125,7 +125,13 @@
         }
         if (name in scope) return scope[name];
         if (["list", "dict", "input", "open", "range"].indexOf(name) !== -1) throw new Error("'" + name + "' is not supported in this mini interpreter");
-        throw new Error("name '" + name + "' is not defined");
+        var known = ["print", "len", "abs", "min", "max", "round", "int", "float", "str", "sum"];
+        if (known.indexOf(name) !== -1 && name in PY_FUNCS) {
+          /* calling a builtin without () fell through — surface a clear error */
+          throw new Error("'" + name + "' is a function — call it like " + name + "(...)");
+        }
+        var near = known.filter(function (k) { return k.indexOf(name) === 0 || name.indexOf(k) === 0; });
+        throw new Error("name '" + name + "' is not defined" + (near.length ? " — did you mean " + near.join(", ") + "?" : ""));
       }
       throw new Error("unexpected '" + (tk.v || tk.t) + "'");
     }
@@ -150,7 +156,12 @@
       line = line.trim();
       if (!line) return;
       var m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(\+=|-=|=)\s*([\s\S]+)$/);
-      if (m && m[2] !== "+=" && m[2] !== "-=" && m[3] !== undefined && !/^=/.test(m[3])) {
+      /* Ignore an `=` match when the right side is really a call like
+         `print(...)` / `len(...)` — otherwise `py print(2+2)` is wrongly
+         parsed as an assignment to a variable named `print` and throws.
+         (Comparison ops like == are already excluded by the regex.) */
+      var rhsIsCall = m && m[3] !== undefined && /^(print|len|abs|min|max|round|int|float|str|sum)\s*\(/.test(m[3]);
+      if (m && m[2] !== "+=" && m[2] !== "-=" && m[3] !== undefined && !/^=/.test(m[3]) && !rhsIsCall) {
         var p = pyParse(pyTokenize(m[3]), scope);
         scope[m[1]] = p.expr(0);
         if (!p.done()) throw new Error("unexpected token after expression");

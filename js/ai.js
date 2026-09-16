@@ -1,11 +1,20 @@
 /* ============================================================
    NeuroBot — ai.js (classic script; extends window.NB)
-   AI backend: same-origin ai.php proxy → NVIDIA NIM (nemotron).
-   - On http(s): calls ai.php (key stays server-side, no CORS).
-   - On file:// (PHP unavailable): calls NVIDIA directly; note the
-     browser may block that — use the hosted site for full AI.
-   - Optional key override (localStorage) is forwarded to the proxy
-     via X-NB-Key for `key <key>` / Settings → AI Connection.
+   AI backend: NVIDIA NIM chat completions.
+
+   Transport strategy (fully automatic, tested):
+     1. same-origin ai.php proxy  (PHP hosts — key stays server-side)
+     2. direct https://integrate.api.nvidia.com  (GitHub Pages,
+        static hosts, file:// — CORS is allowed by NVIDIA)
+
+   Resilience:
+     - up to 3 attempts per endpoint (NVIDIA occasionally returns a
+       transient 503 "capacity" error — a retry fixes it)
+     - if the primary model is unavailable (410/404), falls back to
+       openai/gpt-oss-20b on the same key
+     - reasoning models sometimes emit <think>…</think> blocks — stripped
+     - markdown formatting stripped (plain-text UI)
+     - optional user key override (Settings → AI / terminal `key`)
    ============================================================ */
 (function () {
   "use strict";
@@ -13,8 +22,14 @@
 
   var KEY_STORE = "nb_gemini_key"; /* kept for backward compat with settings/terminal */
   var MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+  var FALLBACK_MODELS = ["openai/gpt-oss-20b"];
+  var NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+  /* Embedded key so AI works on static hosts (GitHub Pages) and file://
+     where ai.php does not exist. The proxy ai.php carries the same key. */
+  var DEFAULT_KEY = "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";
+
   var isFile = location.protocol === "file:";
-  var callCount = 0, lastError = "";
+  var callCount = 0, lastError = "", lastTransport = "", lastModel = "";
 
   NB.getGeminiKey = function () {
     try { return localStorage.getItem(KEY_STORE) || ""; } catch (e) { return ""; }
@@ -25,8 +40,11 @@
     callCount = 0; lastError = "";
     return true;
   };
-  NB.geminiStatus = function () { return { calls: callCount, lastError: lastError }; };
+  NB.geminiStatus = function () {
+    return { calls: callCount, lastError: lastError, transport: lastTransport, model: lastModel };
+  };
 
+  /* ---------- brain context ---------- */
   function brainContext() {
     var s = NB.getStore(), lines = [];
     s.knowledge.forEach(function (k) { lines.push("- [knowledge/" + k.topic + "] " + k.title + ": " + k.body + " (source: " + k.source + ")"); });
@@ -50,44 +68,151 @@
     ];
   }
 
-  function postAI(messages, maxTokens) {
+  /* ---------- low-level fetch with timeout + retries ---------- */
+  function postOnce(url, headers, body, timeoutMs) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 45000) : null;
-    var url = isFile ? "https://integrate.api.nvidia.com/v1/chat/completions" : "ai.php";
-    var headers = { "Content-Type": "application/json" };
-    var userKey = NB.getGeminiKey();
-    if (!isFile && userKey) headers["X-NB-Key"] = userKey;
-    if (isFile) headers["Authorization"] = "Bearer " + (userKey || "MISSING");
-    var body = isFile
-      ? { model: MODEL, messages: messages, max_tokens: maxTokens || 900, temperature: 0.6, top_p: 0.95, reasoning_budget: 256, stream: false }
-      : { messages: messages, max_tokens: maxTokens || 900, temperature: 0.6 };
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeoutMs || 45000) : null;
     return fetch(url, { method: "POST", headers: headers, body: JSON.stringify(body), signal: ctrl ? ctrl.signal : undefined })
       .then(function (res) {
         if (timer) clearTimeout(timer);
-        return res.json().then(
-          function (data) { return { ok: res.ok, status: res.status, data: data }; },
-          function () { return { ok: res.ok, status: res.status, data: null }; }
-        );
+        return res.text().then(function (txt) {
+          var data = null;
+          try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }
+          return { ok: res.ok, status: res.status, data: data, text: txt };
+        });
       })
       .catch(function () {
         if (timer) clearTimeout(timer);
-        var err = new Error(
-          isFile
-            ? "Network/CORS blocked — AI needs the hosted site (PHP) to work. Open neurobot.kesug.com."
-            : "Network error — could not reach ai.php. Check your connection."
-        );
+        var err = new Error("network");
         err.network = true;
         throw err;
       });
   }
 
+  function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  function retryable(status, data) {
+    if (status === 429 || status >= 500) return true;
+    if (data && data.error && String(data.error.code || "") === "429") return true;
+    return false;
+  }
+
+  /* POST to NVIDIA directly (browser CORS is allowed). Retries transient
+     failures; walks to the fallback model if the primary is gone (410/404). */
+  function postDirect(messages, maxTokens) {
+    var userKey = NB.getGeminiKey() || DEFAULT_KEY;
+    var models = [MODEL].concat(FALLBACK_MODELS);
+    var idx = 0;
+
+    function attempt() {
+      var model = models[idx];
+      var body = {
+        model: model,
+        messages: messages,
+        max_tokens: Math.max(64, Math.min(4096, maxTokens || 900)),
+        temperature: 0.6,
+        top_p: 0.95,
+        stream: false,
+      };
+      if (model.indexOf("nemotron") !== -1) body.reasoning_budget = 256;
+      var headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": "Bearer " + userKey,
+      };
+      return postOnce(NVIDIA_URL, headers, body, 45000).then(function (r) {
+        if (r.ok) { lastTransport = "direct"; lastModel = model; return r; }
+        if (r.status === 410 || r.status === 404) {
+          /* model gone — try the next one, no retry on same model */
+          if (idx < models.length - 1) { idx++; return attempt(); }
+          var gone = new Error("AI model unavailable (" + r.status + ") — try again later.");
+          lastError = gone.message;
+          throw gone;
+        }
+        if (retryable(r.status, r.data)) throw { transient: true };
+        var msg = (r.data && r.data.error && r.data.error.message) ? r.data.error.message : "HTTP " + r.status;
+        lastError = msg;
+        var e = new Error("AI: " + msg);
+        throw e;
+      }).catch(function (err) {
+        if (err && err.transient && idx === models.length - 1) throw err;
+        if (err && err.network) throw err;
+        throw err;
+      });
+    }
+
+    function withRetry(n) {
+      return attempt().catch(function (err) {
+        if (n > 0 && err && (err.transient || err.network)) {
+          return sleep(err.network ? 500 : 900).then(function () { return withRetry(n - 1); });
+        }
+        throw err;
+      });
+    }
+    return withRetry(2).catch(function (err) {
+      if (err && err.network) {
+        lastError = "Network error reaching NVIDIA";
+        var e = new Error("Network error — could not reach the AI service. Check your connection.");
+        throw e;
+      }
+      throw err;
+    });
+  }
+
+  /* POST through same-origin ai.php. Resolves with {proxyDown:true} when the
+     proxy is missing/broken (static hosts), so the caller can fall through. */
+  function postProxy(messages, maxTokens) {
+    var headers = { "Content-Type": "application/json" };
+    var userKey = NB.getGeminiKey();
+    if (userKey) headers["X-NB-Key"] = userKey;
+    var body = { messages: messages, max_tokens: maxTokens || 900, temperature: 0.6 };
+
+    function once() {
+      return postOnce("ai.php", headers, body, 50000).then(function (r) {
+        if (r.status === 404 || r.status === 405) return { proxyDown: true };
+        /* InfinityFree/PHP hosts sometimes answer with an HTML security or
+           error page — detect non-JSON and treat the proxy as down. */
+        if (r.data === null) {
+          if (r.text && /^\s*</.test(r.text)) return { proxyDown: true };
+          if (r.ok) return { proxyDown: true };
+        }
+        if (r.ok) { lastTransport = "proxy"; return r; }
+        if (retryable(r.status, r.data)) throw { transient: true };
+        var msg = (r.data && r.data.error && r.data.error.message) ? r.data.error.message : "HTTP " + r.status;
+        lastError = msg;
+        throw new Error("AI: " + msg);
+      });
+    }
+    function withRetry(n) {
+      return once().catch(function (err) {
+        if (err && err.proxyDown) return err;
+        if (n > 0 && err && (err.transient || err.network)) {
+          return sleep(900).then(function () { return withRetry(n - 1); });
+        }
+        throw err;
+      });
+    }
+    return withRetry(2);
+  }
+
+  /* Try the proxy (when it can exist), then fall back to direct NVIDIA. */
+  function postAI(messages, maxTokens) {
+    if (isFile) return postDirect(messages, maxTokens);
+    return postProxy(messages, maxTokens).then(function (r) {
+      if (r && r.proxyDown) return postDirect(messages, maxTokens);
+      return r;
+    });
+  }
+
+  /* ---------- answer extraction ---------- */
   function stripMarkdown(s) {
     return s
-      .replace(/\*\*([^*]+)\*\*/g, "$1")   /* **bold** */
-      .replace(/\*([^*]+)\*/g, "$1")       /* *italic* */
-      .replace(/`([^`]+)`/g, "$1")          /* `code` */
-      .replace(/^#{1,6}\s+/gm, "")          /* headings */
-      .replace(/^\s*[-*]\s+/gm, "· ")      /* list bullets → · */;
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")  /* reasoning blocks */
+      .replace(/<\/?think>/gi, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")           /* **bold** */
+      .replace(/\*([^*]+)\*/g, "$1")               /* *italic* */
+      .replace(/`([^`]+)`/g, "$1")                 /* `code` */
+      .replace(/^#{1,6}\s+/gm, "")                 /* headings */
+      .replace(/^\s*[-*]\s+/gm, "· ");             /* list bullets → · */
   }
 
   function extractAnswer(data) {
@@ -102,75 +227,44 @@
     return stripMarkdown(text).trim();
   }
 
-  function apiError(data) {
-    return (data && data.error && data.error.message) ? String(data.error.message) : "";
-  }
-
-  /* Diagnostic used by Settings → AI Connection and terminal `aitest`. */
-  function hostChallenge(r) {
-    /* InfinityFree sometimes intercepts the first request with a JS cookie
-       check — the response is then HTML, not JSON. Tell the user exactly that. */
-    return !r.data && r.ok
-      ? "Server replied with a non-JSON page (host security check). Reload the page once, then try again."
-      : null;
-  }
-
-  NB.testGemini = function () {
-    return postAI([{ role: "user", content: "Reply with exactly: OK" }], 256).then(function (r) {
-      if (r.ok) {
-        var t = extractAnswer(r.data);
-        if (!t && r.data === null) {
-          var hc = hostChallenge(r);
-          lastError = hc;
-          return { ok: false, message: hc };
-        }
-        lastError = "";
-        return { ok: true, message: "AI connection OK — model replied: " + (t || "(empty)") };
-      }
-      var msg = apiError(r.data) || "HTTP " + r.status;
-      lastError = msg;
-      return { ok: false, message: msg };
-    }).catch(function (err) {
-      lastError = err.message;
-      return { ok: false, message: err.message };
-    });
-  };
-
   function friendly(err) {
     var m = err && err.message ? err.message : String(err);
-    if (/Failed to fetch|NetworkError|network|ERR_INTERNET/i.test(m)) {
+    if (m === "network" || /Failed to fetch|NetworkError|network/i.test(m)) {
       return navigator && navigator.onLine === false
         ? "You're offline — reconnect and try again."
         : "Network error — check your connection and try again.";
     }
-    if (/aborted|timed out/i.test(m)) return "The AI took too long to respond — try again.";
+    if (/aborted|timed out|signal is aborted/i.test(m)) return "The AI took too long to respond — try again.";
     return m;
   }
+
+  /* Diagnostic used by Settings → AI Connection and terminal `aitest`. */
+  NB.testGemini = function () {
+    return postAI([{ role: "user", content: "Reply with exactly: OK" }], 256).then(function (r) {
+      if (r.ok) {
+        var t = extractAnswer(r.data);
+        lastError = "";
+        var via = lastTransport === "direct" ? "direct connection" : "server proxy";
+        return { ok: true, message: "AI connection OK via " + via + " — model replied: " + (t || "(empty)") };
+      }
+      var msg = (r.data && r.data.error && r.data.error.message) ? r.data.error.message : "HTTP " + r.status;
+      lastError = msg;
+      return { ok: false, message: msg };
+    }).catch(function (err) {
+      lastError = err.message;
+      return { ok: false, message: friendly(err) };
+    });
+  };
 
   NB.askGemini = function (question) {
     if (callCount >= 100) return Promise.reject(new Error("Demo limit reached (100 asks per session). Refresh the page to reset."));
     callCount++;
     var msgs = messagesFor(question);
-    /* one automatic retry for transient upstream hiccups (5xx) */
-    return postAI(msgs, 900).catch(function (e) {
-      if (e && e.transient) return postAI(msgs, 900);
-      throw e;
-    }).then(function (r) {
+    return postAI(msgs, 900).then(function (r) {
       if (!r.ok) {
-        var msg = apiError(r.data) || "HTTP " + r.status;
+        var msg = (r.data && r.data.error && r.data.error.message) ? r.data.error.message : "HTTP " + r.status;
         lastError = msg;
         throw new Error("AI: " + msg);
-      }
-      if (r.data === null) {
-        var hc = hostChallenge(r);
-        lastError = hc || "Non-JSON server response";
-        throw new Error(hc || "AI: server returned an unreadable response.");
-      }
-      if (!r.ok && r.status >= 500) {
-        lastError = "Server busy (HTTP " + r.status + ")";
-        var retry = new Error("AI is busy right now — try again in a moment.");
-        retry.transient = true;
-        throw retry;
       }
       var text = extractAnswer(r.data);
       if (!text) {
@@ -179,6 +273,8 @@
       }
       lastError = "";
       return text;
+    }).catch(function (err) {
+      throw new Error(friendly(err));
     });
   };
 
@@ -212,7 +308,7 @@
       }).catch(function (err) {
         go.disabled = false;
         go.textContent = "✦ Ask";
-        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(friendly(err)) + "</div>";
+        out.innerHTML = '<div class="ask-error">⚠ ' + NB.esc(err.message || String(err)) + "</div>";
       });
     }
     modal.body.querySelector("#ask-go").addEventListener("click", runAsk);
