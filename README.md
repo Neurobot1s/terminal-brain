@@ -1,8 +1,8 @@
 # NeuroBot — Your Second Brain 🧠
 
 A polished, personal second-brain app: capture notes, ideas, knowledge and goals,
-see them on a neural knowledge graph, and **ask your brain questions** — Gemini
-answers using your own memories as context.
+see them on a neural knowledge graph, and **ask your brain questions** — NVIDIA NIM
+(`nemotron-3-nano`) answers using your own memories as context.
 
 **Crafted by TANISHQ LALWANI** ✨
 

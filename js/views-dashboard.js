@@ -137,7 +137,7 @@
       var thinking = bubble("ai think", "✦ thinking with " + totalItems() + " memories…");
       var sendBtn = $("#ask-send", root);
       sendBtn.disabled = true;
-      NB.askGemini(q).then(function (answer) {
+      NB.askAI(q).then(function (answer) {
         thinking.className = "bubble ai";
         thinking.textContent = answer;
       }).catch(function (err) {

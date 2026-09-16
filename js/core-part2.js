@@ -90,7 +90,7 @@
     });
   };
 
-  NB.resetDemo = function () { NB.setStore(seed()); };
+  NB.resetDemo = function () { NB.setStore(NB.seed()); };
   NB.clearAll = function () { NB.setStore({ notes: [], ideas: [], goals: [], knowledge: [], activity: [] }); };
 
   NB.totalItems = function () {

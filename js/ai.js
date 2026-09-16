@@ -22,9 +22,8 @@
   "use strict";
   if (!window.NB) return;
 
-  var KEY_STORE = "nb_ai_key";            /* custom key override */
-  var LEGACY_KEY_STORE = "nb_gemini_key"; /* pre-rename location — imported once */
-  var MODEL_STORE = "nb_ai_model";        /* preferred model */
+  var KEY_STORE = "nb_ai_key";     /* custom key override */
+  var MODEL_STORE = "nb_ai_model"; /* preferred model */
   var MODELS = [
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
     "openai/gpt-oss-20b",
@@ -38,21 +37,10 @@
   var callCount = 0, lastError = "", lastModel = "";
   var directBlocked = false; /* session memory: browser blocked the call */
 
-  /* one-time import of a custom key saved under the old name */
-  (function importLegacyKey() {
-    try {
-      if (!localStorage.getItem(KEY_STORE) && localStorage.getItem(LEGACY_KEY_STORE)) {
-        var old = localStorage.getItem(LEGACY_KEY_STORE);
-        if (old && old !== DEFAULT_KEY) localStorage.setItem(KEY_STORE, old);
-        localStorage.removeItem(LEGACY_KEY_STORE);
-      }
-    } catch (e) { /* storage unavailable */ }
-  })();
-
-  NB.getGeminiKey = function () {
+  NB.getAIKey = function () {
     try { return localStorage.getItem(KEY_STORE) || ""; } catch (e) { return ""; }
   };
-  NB.setGeminiKey = function (k) {
+  NB.setAIKey = function (k) {
     k = String(k || "").trim();
     try {
       if (k) localStorage.setItem(KEY_STORE, k);
@@ -76,7 +64,7 @@
   };
   NB.AI_MODELS = MODELS;
 
-  NB.geminiStatus = function () {
+  NB.aiStatus = function () {
     return { calls: callCount, lastError: lastError, transport: "direct", model: lastModel, env: NB.aiEnv() };
   };
   /* host-capability diagnostics for Settings → AI Connection */
@@ -85,7 +73,7 @@
       protocol: location.protocol,
       file: isFile,
       direct: directBlocked ? "blocked" : "ready",
-      key: NB.getGeminiKey() ? "custom" : "embedded",
+      key: NB.getAIKey() ? "custom" : "embedded",
       model: NB.getAIModel(),
     };
   };
@@ -155,7 +143,7 @@
   /* ---------- direct NVIDIA transport (the only transport) ---------- */
   function postDirect(messages, maxTokens) {
     if (directBlocked) return Promise.reject(blockedError());
-    var userKey = NB.getGeminiKey() || DEFAULT_KEY;
+    var userKey = NB.getAIKey() || DEFAULT_KEY;
     var models = [NB.getAIModel()].concat(MODELS);
     var idx = 0, transientTries = 0, saw503 = false;
 
@@ -256,7 +244,7 @@
 
   /* Diagnostic used by Settings → AI Connection and terminal `aitest`.
      Counts against the session budget like any other ask. */
-  NB.testGemini = function () {
+  NB.testAI = function () {
     if (callCount >= ASK_LIMIT) {
       return Promise.resolve({ ok: false, message: "Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset." });
     }
@@ -276,7 +264,7 @@
     });
   };
 
-  NB.askGemini = function (question) {
+  NB.askAI = function (question) {
     if (callCount >= ASK_LIMIT) {
       return Promise.reject(new Error("Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset."));
     }
@@ -324,7 +312,7 @@
       var out = modal.body.querySelector("#ask-out");
       out.style.display = "block";
       out.innerHTML = '<div class="ask-loading">✦ Thinking with ' + NB.totalItems() + " memories…</div>";
-      NB.askGemini(q).then(function (answer) {
+      NB.askAI(q).then(function (answer) {
         go.disabled = false;
         go.textContent = "✦ Ask";
         out.innerHTML = '<div class="ask-answer">' + NB.esc(answer) + "</div>";

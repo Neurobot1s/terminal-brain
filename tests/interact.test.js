@@ -135,14 +135,14 @@ function count() { const s = NB.getStore(); return s.notes.length + s.ideas.leng
   if (del) del.click();
   check("activity delete removes entry", NB.getStore().activity.length === actsBefore - 1);
 
-  const realAsk = NB.askGemini;
-  NB.askGemini = () => Promise.resolve("stub answer from test");
+  const realAsk = NB.askAI;
+  NB.askAI = () => Promise.resolve("stub answer from test");
   $("#ask-input").value = "what did I capture?";
   $("#ask-send").click();
   await sleep(60);
   const aiBubble = $(".ask-thread .bubble.ai:not(.think)");
   check("inline ask renders answer bubble", aiBubble !== null && aiBubble.textContent === "stub answer from test");
-  NB.askGemini = realAsk;
+  NB.askAI = realAsk;
 
   NB.resetDemo();
   check("health label reacts to store", /Brain/.test($("#bh-label").textContent));

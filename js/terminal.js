@@ -333,16 +333,16 @@
     } },
     key: { desc: "set/view AI key override", run: function (args) {
       if (!args.length) {
-        var k = NB.getGeminiKey();
+        var k = NB.getAIKey();
         return [["t-info", "custom key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "server default")], ["t-dim", "  set one:  key <your-api-key>   ·   clear:  key clear"]];
       }
       var v = args.join("");
-      if (v.toLowerCase() === "clear") { NB.setGeminiKey(""); return [["t-ok", "override cleared — using server key"]]; }
-      NB.setGeminiKey(v);
+      if (v.toLowerCase() === "clear") { NB.setAIKey(""); return [["t-ok", "override cleared — using the embedded NVIDIA key"]]; }
+      NB.setAIKey(v);
       return [["t-ok", "key override saved — run 'aitest' to verify"]];
 } },
     aitest: { desc: "test AI connection", run: function () {
-      NB.testGemini().then(function (r) {
+      NB.testAI().then(function (r) {
         var term = document.querySelector(".term-out");
         if (!term) return;
         var d = document.createElement("div");

@@ -154,8 +154,9 @@
         });
     });
     if (Array.isArray(s.activity)) {
+      /* keep existing ids so rendered delete buttons stay valid across writes */
       out.activity = s.activity.filter(function (a) { return a && typeof a.title === "string"; }).slice(0, ACTIVITY_LIMIT)
-        .map(function (a) { return { id: uid(), kind: String(a.kind || "note").slice(0, 20), title: String(a.title).slice(0, 300), createdAt: Number(a.createdAt) || Date.now() }; });
+        .map(function (a) { return { id: (typeof a.id === "string" && a.id) ? String(a.id).slice(0, 64) : uid(), kind: String(a.kind || "note").slice(0, 20), title: String(a.title).slice(0, 300), createdAt: Number(a.createdAt) || Date.now() }; });
     }
     return out;
   }
@@ -227,6 +228,7 @@
     $: $, $$: $$, el: el, esc: esc, uid: uid,
     timeAgo: timeAgo, formatDate: formatDate, daysUntil: daysUntil,
     getStore: getStore, setStore: setStore, onStoreChange: onStoreChange,
+    seed: seed,
     debounce: function (fn, ms) {
       var t = null;
       return function () {

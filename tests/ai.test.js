@@ -3,7 +3,7 @@
  * It proves the whole fallback chain works end to end:
  *   1. load js/ai.js in a jsdom page hosted at a non-PHP origin (simulates
  *      GitHub Pages / any static host) — the ai.php proxy 404s there
- *   2. ask a question through NB.askGemini()
+ *   2. ask a question through NB.askAI()
  *   3. expect a real answer fetched from NVIDIA NIM via the direct fallback
  * Skipped automatically if jsdom or the network is unavailable.
  */
@@ -57,27 +57,27 @@ function check(label, ok, extra) {
 }
 
 (async () => {
-  /* 1 — terminal-style smoke: testGemini returns ok:true */
+  /* 1 — terminal-style smoke: testAI returns ok:true */
   try {
-    const r = await NB.testGemini();
-    check("testGemini ok", r && r.ok === true, r ? String(r.message).slice(0, 160) : "no result");
+    const r = await NB.testAI();
+    check("testAI ok", r && r.ok === true, r ? String(r.message).slice(0, 160) : "no result");
     check("reply mentions transport", r && /proxy|direct/.test(r.message), r ? r.message : "");
   } catch (e) {
-    check("testGemini ok", false, e.message);
+    check("testAI ok", false, e.message);
   }
 
   /* 2 — real Ask with brain context */
   try {
-    const answer = await NB.askGemini("In one short sentence, what is the Transformer architecture note about?");
-    check("askGemini returned an answer", typeof answer === "string" && answer.trim().length > 0, answer ? answer.slice(0, 120) : "empty");
+    const answer = await NB.askAI("In one short sentence, what is the Transformer architecture note about?");
+    check("askAI returned an answer", typeof answer === "string" && answer.trim().length > 0, answer ? answer.slice(0, 120) : "empty");
     check("answer has no markdown asterisks", typeof answer === "string" && !/\*\*/.test(answer), answer ? answer.slice(0, 80) : "");
   } catch (e) {
-    check("askGemini returned an answer", false, e.message);
+    check("askAI returned an answer", false, e.message);
   }
 
   /* 3 — status object is intact */
-  const st = NB.geminiStatus();
-  check("geminiStatus tracks calls", st && st.calls >= 2, JSON.stringify(st).slice(0, 120));
+  const st = NB.aiStatus();
+  check("aiStatus tracks calls", st && st.calls >= 2, JSON.stringify(st).slice(0, 120));
 
   for (const [l, r] of checks) console.log((r === "OK" ? " ✓" : " ✗"), l, r === "OK" ? "" : "→ " + r);
   if (errors.length) { console.log("\nERRORS:"); errors.forEach((e) => console.log("  ", e.slice(0, 300))); }

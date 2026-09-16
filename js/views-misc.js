@@ -80,13 +80,13 @@
 
     var prefs = loadPrefs();
     var keyPrev = $("#ai-key-preview", root);
-    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "server default"; }
-    keyPrev.textContent = maskKey(NB.getGeminiKey());
+    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "embedded default"; }
+    keyPrev.textContent = maskKey(NB.getAIKey());
     $("#ai-key-save", root).addEventListener("click", function () {
       var v = $("#ai-key-input", root).value.trim();
       if (!v) { toast("Paste a key first.", "err"); return; }
-      NB.setGeminiKey(v);
-      keyPrev.textContent = maskKey(NB.getGeminiKey());
+      NB.setAIKey(v);
+      keyPrev.textContent = maskKey(NB.getAIKey());
       $("#ai-key-input", root).value = "";
       toast("Key saved locally.");
     });
@@ -94,15 +94,15 @@
       var out = $("#ai-test-out", root);
       out.textContent = "$ ai --test … pinging the model…";
       out.className = "ai-test-out pending";
-      NB.testGemini().then(function (r) {
+      NB.testAI().then(function (r) {
         out.textContent = (r.ok ? "✓ " : "⚠ ") + r.message;
         out.className = "ai-test-out " + (r.ok ? "ok" : "err");
       });
     });
     $("#ai-key-reset", root).addEventListener("click", function () {
-      NB.setGeminiKey("");
-      keyPrev.textContent = maskKey(NB.getGeminiKey());
-      toast("Using the server key.");
+      NB.setAIKey("");
+      keyPrev.textContent = maskKey(NB.getAIKey());
+      toast("Using the embedded NVIDIA key.");
     });
 
     /* model picker → localStorage (static hosting — no server writes) */
@@ -118,7 +118,7 @@
       var e = NB.aiEnv ? NB.aiEnv() : {};
       envOut.innerHTML = "env · transport: <b>direct</b> · browser: <b>" + NB.esc(e.protocol || "?") +
         "</b> · key: <b>" + NB.esc(e.key || "?") + "</b> · model: <b>" + NB.esc((String(e.model || "").indexOf("gpt-oss") !== -1 ? "GPT-OSS 20B" : "Nemotron Nano")) + "</b>";
-      var st = NB.geminiStatus ? NB.geminiStatus() : {};
+      var st = NB.aiStatus ? NB.aiStatus() : {};
       if (st.lastError) envOut.innerHTML += " · last error: <b>" + NB.esc(st.lastError) + "</b>";
     }
     refreshEnv();
