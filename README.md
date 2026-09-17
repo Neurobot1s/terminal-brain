@@ -52,7 +52,8 @@ js/
   views-dashboard.js  hero, ask box (inline AI chat), stat cards, graph, pinned, quick capture
   views-collections.js  My Brain / Notes / Knowledge / Goals
   views-kanban.js     Ideas board (drag & drop between columns)
-  views-misc.js       Connections, Settings (import/export, AI panel), Credits / Live / NeuroVision
+  voice.js            NeuroBot Live — NVIDIA STT + TTS voice conversation
+  views-misc.js       Connections, Settings (import/export, AI panel), Credits / NeuroVision
   main.js             hash router, palette (Ctrl+K + arrows), shortcuts (?), g-nav
   terminal.js         in-app console: help, ls, find, cd, new, ask, py, theme, stats…
   fx.js               blue paper-pop click effect
@@ -82,9 +83,20 @@ js/
   via localStorage), test the connection, see live diagnostics
   (protocol / key in use / model / route), optional key override, optional
   self-hosted relay URL.
-- **Extras** — Credits popup (crafted by Tanishq Lalwani), Live voice modal
-  (coming soon), brain-health indicator, collapsible sidebar, fully responsive
-  with mobile drawer, toasts.
+- **NeuroBot Live (voice)** — a real voice conversation, not a teaser.
+  Tap the orb, talk, and NeuroBot transcribes you, answers from your own
+  memories, and speaks the reply out loud. Silence detection ends the turn
+  automatically, plus a hands-free mode that keeps listening after each
+  answer and a "save transcript" button that files the whole conversation
+  as a note. Speech is **NVIDIA-only** (Parakeet TDT / Whisper ASR for
+  hearing, Magpie / Chatterbox / StudioVoice for speaking) called from the
+  browser through NVIDIA's CORS-open NVCF endpoint with self-healing model
+  ids. NVIDIA's speech NIMs are preview functions and aren't always
+  reachable, so Live falls back to your device's own speech engine and
+  always tells you which engine it is using. No screen sharing, no capture,
+  no audio ever stored.
+- **Extras** — Credits popup (crafted by Tanishq Lalwani), brain-health
+  indicator, collapsible sidebar, fully responsive with mobile drawer, toasts.
 - **Keyboard** — Ctrl+K palette with arrow-key nav and actions, `?` shortcuts
   modal, `g`+key page jumps, `N`/`I`/`G` quick capture, `` ` `` terminal.
 - **In-app terminal** — drop-down console with working commands (`help`,
@@ -104,6 +116,8 @@ boots and every route renders:
 npm install jsdom --no-save   # anywhere with node
 node tests/boot.test.js       # 10 checks: boot, CRUD, modals, terminal, py, click fx
 node tests/routes.test.js     # 16 checks: every page renders, kanban, graph, panels
+node tests/interact.test.js   # click-through flows: CRUD, palette, terminal modals
+node tests/live.test.js       # 27 checks: Live voice engine + full voice round-trip
 ```
 
 Don't upload the `tests/` folder to htdocs — it's for development only.

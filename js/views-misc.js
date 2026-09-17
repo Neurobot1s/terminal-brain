@@ -247,21 +247,8 @@
     $("[data-close]", modal.body).addEventListener("click", modal.close);
   };
 
-  NB.openLive = function () {
-    var modal = openModal({ subtitle: "$ neurobot live --voice", title: "NeuroBot Live" });
-    var bars = [];
-    for (var i = 0; i < 7; i++) bars.push('<i style="animation-delay:' + (i * 0.12).toFixed(2) + 's"></i>');
-    modal.body.innerHTML =
-      '<div style="text-align:center;padding:1rem 0">' +
-        '<div class="mic-visual"><div class="mic-ring"><div class="mic-core">🎙</div></div>' +
-        '<div class="mic-bars">' + bars.join("") + "</div></div>" +
-        '<h3 style="font-size:1.05rem;font-weight:700;margin:.75rem 0 0">NeuroBot Live</h3>' +
-        '<p class="muted" style="margin:.375rem auto 0;max-width:20rem">Real-time voice conversations are coming soon.</p>' +
-        '<div style="margin-top:.875rem"><span class="chip on">status: in development</span></div>' +
-        '<div style="margin-top:1.25rem"><button class="btn btn-outline btn-sm" data-close>Back to my brain</button></div>' +
-      "</div>";
-    $("[data-close]", modal.body).addEventListener("click", modal.close);
-  };
+  /* NB.openLive lives in js/voice.js — the working voice conversation
+     modal (NVIDIA speech-to-text + text-to-speech). */
 
   NB.openNeuroVision = function () {
     var modal = openModal({ subtitle: "$ neurobot vision --screen", title: "NeuroVision" });

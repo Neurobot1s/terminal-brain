@@ -33,10 +33,13 @@ window.matchMedia = window.matchMedia || function () { return { matches: false, 
 window.HTMLElement.prototype.scrollIntoView = function () {};
 window.scrollTo = function () {};
 if (!window.fetch) window.fetch = () => Promise.reject(new Error("offline"));
+/* the one-time Credits popup fires 900ms after boot and would race these
+   steps — mark it as already shown so the harness is deterministic */
+window.sessionStorage.setItem("nb_credit", "1");
 
 for (const f of ["js/core.js", "js/core-part2.js", "js/prefs.js", "js/ai.js",
   "js/views-dashboard.js", "js/views-collections.js", "js/views-kanban.js",
-  "js/views-misc.js", "js/main.js", "js/terminal.js", "js/fx.js"]) {
+  "js/views-misc.js", "js/voice.js", "js/main.js", "js/terminal.js", "js/fx.js"]) {
   try { window.eval(fs.readFileSync(path.join(ROOT, f), "utf8")); }
   catch (e) { console.log(" ✗ script failed:", f, "→", e.message); process.exit(1); }
 }
@@ -45,6 +48,12 @@ const NB = window.NB;
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* fixed sleeps race jsdom's async hashchange re-render — poll instead */
+async function waitFor(fn, ms) {
+  const end = Date.now() + (ms || 600);
+  while (Date.now() < end) { if (fn()) return true; await sleep(10); }
+  return !!fn();
+}
 const key = (el2, k, opts) => el2.dispatchEvent(new window.KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, opts || {})));
 const checks = [];
 function check(label, ok, extra) { checks.push([label, ok === true ? "OK" : "FAIL" + (extra ? ": " + extra : "")]); }
@@ -98,7 +107,7 @@ function count() { const s = NB.getStore(); return s.notes.length + s.ideas.leng
   $("#capture-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
   await sleep(60);
   check("edit saves new title", NB.getStore().notes.find((n) => n.id === editId).title === "Renamed via test");
-  check("modal closes after save", $("#modal-root").children.length === 0);
+  check("modal closes after save", await waitFor(() => $("#modal-root").children.length === 0));
 
   /* ── ideas kanban ── */
   nav("#/ideas"); await sleep(60);

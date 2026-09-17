@@ -269,14 +269,23 @@
             lsSet(ROUTE_STORE, route.name);
             return r;
           }
-          /* relay refused (block page, HTML…) or transient upstream → next route */
-          if ((r.data === null && (r.status === 403 || r.status >= 500)) || r.status === 429 || r.status >= 500) {
-            if ((r.status === 429 || r.status >= 500) && transientTries < 2 && route.name === "nvidia-nvcf") {
+          /* rate limited — same model, short backoff, then try other routes */
+          if (r.status === 429) {
+            if (transientTries < 2 && route.name === "nvidia-nvcf") {
               transientTries++;
-              return sleep(r.status === 429 ? 1500 : 900).then(attempt);
+              return sleep(1200).then(attempt);
             }
             routeIdx++;
             return sleep(250).then(attempt);
+          }
+          /* 5xx = THIS NVIDIA function is unhealthy. Its neighbours fail
+             independently, so jump straight to the next model instead of
+             grinding through this one's remaining routes. */
+          if (r.status >= 500) {
+            mIdx++;
+            routeIdx = 0;
+            transientTries = 0;
+            return sleep(150).then(attempt);
           }
           if (r.status === 401) throw keyError(401);
           if (r.status === 403) {

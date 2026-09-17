@@ -208,7 +208,9 @@
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
         ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query the AI"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
-        ["key / aitest / model", "AI key (NVIDIA), connection test, model switch"], ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
+        ["key / aitest / model", "AI key (NVIDIA), connection test, model switch"],
+        ["voice", "probe NVIDIA voice (STT + TTS) for Live"],
+        ["theme <name>", "dark / midnight / forest"], ["export", "download brain as json"],
         ["clear", "wipe the screen"], ["exit", "close terminal"],
       ];
       rows.forEach(function (r) { out.push(["t-cmd", "  " + pad(r[0], 18) + " " + r[1]]); });
@@ -353,6 +355,26 @@
         term.scrollTop = term.scrollHeight;
       });
       return [["t-info", "$ ai --test … pinging the model…"]];
+    } },
+    voice: { desc: "probe NVIDIA voice (STT + TTS)", run: function () {
+      if (!NB.voiceTest) return [["t-err", "voice module not loaded"]];
+      var term = document.querySelector(".term-out");
+      function line(cls, txt) {
+        if (!term) return;
+        var d = document.createElement("div");
+        d.className = "term-line " + cls;
+        d.textContent = txt;
+        term.appendChild(d);
+        term.scrollTop = term.scrollHeight;
+      }
+      NB.voiceTest(function (s) { line("t-dim", "  … " + s); }).then(function (r) {
+        var stt = (r.notes[0] || "").replace(/^STT: /, "");
+        var tts = (r.notes[1] || "").replace(/^TTS: /, "");
+        line(r.stt ? "t-ok" : "t-info", (r.stt ? "✓ " : "• ") + "hear  — " + stt);
+        line(r.tts ? "t-ok" : "t-info", (r.tts ? "✓ " : "• ") + "speak — " + tts);
+        line("t-dim", "  Live uses whichever engine answered; the rest is labelled in the modal footer.");
+      });
+      return [["t-info", "$ voice --probe … checking NVIDIA speech models…"]];
     } },
     model: { desc: "show/set AI model", run: function (args) {
       var MODELS = NB.AI_MODELS || [];
