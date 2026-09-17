@@ -130,8 +130,9 @@
         role: "system",
         content:
           "You are NeuroBot, a personal second-brain assistant. " +
-          "Answer ONLY from the memories provided by the user. " +
-          "If they don't contain the answer, say so briefly and offer what is closest. " +
+          "STEP 1 — scan the MEMORIES provided by the user. If they contain anything relevant to the question, answer from them and build on it. " +
+          "STEP 2 — if the memories don't cover it, answer from your own general knowledge like a normal helpful assistant (never say there is no relevant memory; just answer). " +
+          "You may blend both: what the user's brain says + what you know. " +
           "Be concise (max ~100 words). Plain text only, no markdown formatting.",
       },
       { role: "user", content: "MEMORIES (" + NB.totalItems() + " items):\n" + brainContext() + "\n\nQUESTION: " + q },
