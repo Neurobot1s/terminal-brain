@@ -57,7 +57,7 @@
   var STT_TIMEOUT = 14000;  /* total budget for one utterance → text */
   var TTS_TIMEOUT = 12000;  /* total budget for one answer → speech */
   var REQ_TIMEOUT = 7000;   /* per HTTP request */
-  var FAIL_BACKOFF = 10 * 60 * 1000;
+  var FAIL_BACKOFF = 2 * 60 * 1000;
 
   /* turn-taking */
   var PAUSE_MS = 5000;      /* hands-free: send after a 5s pause */
@@ -251,7 +251,10 @@
   function trySttAttempt(a) {
     var headers = a.engine === "nvcf-form" ? a.headers : authHeaders(a.headers);
     return req(a.url, { method: "POST", headers: headers, body: a.body }, REQ_TIMEOUT).then(function (res) {
-      if (res.status === 429 || res.status >= 500) { var e = new Error("retry"); e.retry = true; throw e; }
+      if (res.status === 429) { var e = new Error("retry"); e.retry = true; throw e; }
+      /* 404/500 on NVIDIA speech = the NIM can't be served over HTTP —
+         deterministic, so bail the whole chain instantly (no limbo) */
+      if (res.status === 404 || res.status >= 500) { var e5 = new Error("nv-speech-down"); e5.deterministic = true; throw e5; }
       if (!res.ok) { var e2 = new Error("http " + res.status); throw e2; }
       var ct = (res.headers.get("content-type") || "").toLowerCase();
       if (ct.indexOf("json") === -1 && ct.indexOf("text") === -1) return "";
@@ -287,9 +290,7 @@
             remember("stt", a.engine + "|" + models[i].fn);
             return { text: text, engine: a.engine, model: models[i] };
           }).catch(function (err) {
-            /* two transport-level failures in a row = NVIDIA can't be
-               reached from this browser at all (CORS/offline) — don't
-               burn seconds walking the rest of the chain */
+            if (err && err.deterministic) throw unreachable();
             if (err && err.network && ++netFails >= 2) throw unreachable();
             return sleep(60).then(nextAttempt);
           });
@@ -341,7 +342,8 @@
 
   function tryTtsAttempt(a) {
     return req(a.url, { method: "POST", headers: authHeaders(a.headers), body: a.body }, REQ_TIMEOUT).then(function (res) {
-      if (res.status === 429 || res.status >= 500) { var e = new Error("retry"); e.retry = true; throw e; }
+      if (res.status === 429) { var e = new Error("retry"); e.retry = true; throw e; }
+      if (res.status === 404 || res.status >= 500) { var e5 = new Error("nv-speech-down"); e5.deterministic = true; throw e5; }
       if (!res.ok) { var e2 = new Error("http " + res.status); throw e2; }
       var ct = (res.headers.get("content-type") || "").toLowerCase();
       if (ct.indexOf("audio") !== -1) {
@@ -378,6 +380,7 @@
             remember("tts", a.engine + "|" + models[i].fn);
             return Object.assign({ engine: a.engine, model: models[i] }, out);
           }).catch(function (err) {
+            if (err && err.deterministic) throw unreachable();
             if (err && err.network && ++netFails >= 2) throw unreachable();
             return sleep(60).then(nextAttempt);
           });
@@ -453,7 +456,7 @@
     u.pitch = 1;
     u.onend = function () { if (onEnd) onEnd(); };
     u.onerror = function () { if (onEnd) onEnd(); };
-    window.speechSynthesis.speak(u);
+    try { window.speechSynthesis.speak(u); } catch (e) { if (onEnd) onEnd(); }
     return true;
   }
 
@@ -484,8 +487,8 @@
       var parts = String(v).split("|");
       var eng = parts[0], fn = parts[1] || "";
       var label = fn ? (fn.replace(/^ai-/, "").replace(/_/g, " ")) : "";
-      if (eng.indexOf("nvcf") === 0) return "NVIDIA " + (label || "speech") + " (nvcf)";
-      if (eng === "relay") return "NVIDIA " + (label || "speech") + " (your relay)";
+      if (eng.indexOf("nvcf") === 0) return "NVIDIA " + (label || "speech");
+      if (eng === "relay") return "NVIDIA " + (label || "speech") + " (relay)";
       if (eng === "integrate") return "NVIDIA " + (label || "speech") + " (integrate)";
       return null;
     }
@@ -575,6 +578,8 @@
     var listening = false, handsFree = false, busy = false, closed = false;
     var recognizer = null, browserFinal = "", turns = [];
     var latestPartial = "";
+    var said = {};            /* global dedupe: one utterance → one bubble, ever */
+    var lastSpokeText = "";   /* what NeuroBot last said out loud (echo guard) */
 
     function esc(s) { return NB.esc(s); }
 
@@ -593,7 +598,7 @@
       var tts = e.tts || (e.ttsFallback ? "device voice" : "unavailable");
       foot.innerHTML =
         "hearing: <b>" + esc(stt) + "</b> · speaking: <b>" + esc(tts) + "</b>" +
-        (e.nvidiaDown ? ' · <span class="live-warn">NVIDIA speech busy — retrying shortly</span>' : "");
+        (e.nvidiaDown ? ' · <span class="live-warn">NVIDIA speech models unreachable — using your device voice</span>' : "");
       if (NB.hasCustomKey && NB.hasCustomKey()) foot.innerHTML += " · using your key";
     }
 
@@ -686,7 +691,9 @@
           } catch (e) { audioCtx = null; analyser = null; }
 
           browserFinal = "";
+          latestPartial = "";
           recognizer = browserListen(function (partial) {
+            latestPartial = partial || "";
             if (partial) setStatus(partial, "live");
           });
 
@@ -760,7 +767,6 @@
           })
         : Promise.reject(new Error("skipped"));
 
-      var seen = {};
       nvidia.then(function (r) {
         clearNvidiaDown();
         return { text: r.text, engine: r.model.label + " (NVIDIA)" };
@@ -769,17 +775,22 @@
         return { text: browserText, engine: browserText ? "device speech recognition" : "" };
       }).then(function (got) {
         refreshFoot();
-        /* one utterance = one bubble: drop duplicate/empty results that
-           can arrive from both engines */
+        /* one utterance = one bubble, ever. Drops: echoes of NeuroBot's
+           own last line, repeats of anything already sent this session,
+           and empty/duplicate results from either engine. */
         var text = String(got.text || "").replace(/\s+/g, " ").trim();
-        var key = text.toLowerCase();
-        if (!text || seen[key]) {
+        var key = text.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+        var echoed = lastSpokeText && key && (lastSpokeText.indexOf(key) !== -1 || key.indexOf(lastSpokeText) !== -1);
+        if (!text || echoed || said[key]) {
           busy = false;
           setMode("idle");
-          setStatus("Couldn't hear that — tap the orb and try again.", "warn");
+          if (echoed) setStatus("(echo filtered — that was NeuroBot speaking)", "warn");
+          else if (said[key]) setStatus("(repeat filtered — already answered that)", "warn");
+          else setStatus("Couldn't hear that — tap the orb and try again.", "warn");
+          if (handsFree) setTimeout(function () { if (!closed && !busy) startListening(); }, 900);
           return;
         }
-        seen[key] = true;
+        said[key] = true;
         bubble("user", text);
         pushTurn("you", text);
         ask(text);
@@ -797,6 +808,7 @@
         pending.querySelector(".live-said").textContent = answer;
         thread.scrollTop = thread.scrollHeight;
         pushTurn("neurobot", answer);
+        lastSpokeText = String(answer).toLowerCase().replace(/[^a-z0-9 ]/g, "").trim().slice(0, 120);
         busy = false;
         speak(answer);
       }).catch(function (err) {
