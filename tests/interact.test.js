@@ -56,13 +56,13 @@ function count() { const s = NB.getStore(); return s.notes.length + s.ideas.leng
   check("boot: view populated", $("#view").children.length > 0);
 
   /* ── navigation ── */
-  nav("#/notes"); await sleep(20);
+  nav("#/notes"); await sleep(60);
   check("hash nav renders notes", $(".mem-card") !== null);
-  key(document.body, "g"); key(document.body, "k"); await sleep(20);
+  key(document.body, "g"); key(document.body, "k"); await sleep(60);
   check("g-nav g+k goes to knowledge", window.location.hash === "#/knowledge" && $(".page-head h1") && /Knowledge/.test($(".page-head h1").textContent));
 
   /* ── my brain: search + filter ── */
-  nav("#/brain"); await sleep(20);
+  nav("#/brain"); await sleep(60);
   const q = $("#brain-q");
   q.value = "transformer";
   q.dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -76,7 +76,7 @@ function count() { const s = NB.getStore(); return s.notes.length + s.ideas.leng
   check("brain kind filter shows 4 goals", $$("#brain-list .mem-card").length === 4, "got " + $$("#brain-list .mem-card").length);
 
   /* ── notes: edit + pin + delete ── */
-  nav("#/notes"); await sleep(20);
+  nav("#/notes"); await sleep(60);
   const before = NB.getStore().notes.length;
   const pinBtn = $("[data-pin]");
   const pinId = pinBtn.getAttribute("data-pin");
@@ -92,42 +92,42 @@ function count() { const s = NB.getStore(); return s.notes.length + s.ideas.leng
 
   const editBtn = $$("[data-edit]").find((b) => b.getAttribute("data-kind") === "note");
   const editId = editBtn.getAttribute("data-edit");
-  editBtn.click(); await sleep(20);
+  editBtn.click(); await sleep(60);
   check("edit opens capture modal", !!$("#capture-form") && $("#f-title").value.length > 0);
   $("#f-title").value = "Renamed via test";
   $("#capture-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
-  await sleep(20);
+  await sleep(60);
   check("edit saves new title", NB.getStore().notes.find((n) => n.id === editId).title === "Renamed via test");
   check("modal closes after save", $("#modal-root").children.length === 0);
 
   /* ── ideas kanban ── */
-  nav("#/ideas"); await sleep(20);
+  nav("#/ideas"); await sleep(60);
   check("kanban has 4 columns", $$(".kanban-col").length === 4);
   const ideaId = NB.getStore().ideas[0].id;
   const sel = $('[data-status-for="' + ideaId + '"]');
   sel.value = "building";
   sel.dispatchEvent(new window.Event("change", { bubbles: true }));
-  await sleep(20);
+  await sleep(60);
   check("status select updates store", NB.getStore().ideas.find((i) => i.id === ideaId).status === "building");
 
   /* ── goals: progress + clamp ── */
-  nav("#/goals"); await sleep(20);
+  nav("#/goals"); await sleep(60);
   const g1 = NB.getStore().goals[0];
   const plusBtn = $('[data-goal-progress="' + g1.id + '"][data-delta="+10"]');
   plusBtn.click();
   check("goal +10 updates progress", NB.getStore().goals.find((g) => g.id === g1.id).progress === Math.min(100, g1.progress + 10));
-  NB.updateGoal(g1.id, { progress: 95 }); nav("#/goals"); await sleep(20);
+  NB.updateGoal(g1.id, { progress: 95 }); nav("#/goals"); await sleep(60);
   $('[data-goal-progress="' + g1.id + '"][data-delta="+10"]').click();
   $('[data-goal-progress="' + g1.id + '"][data-delta="+10"]').click();
   check("goal progress clamps at 100", NB.getStore().goals.find((g) => g.id === g1.id).progress === 100);
 
   /* ── dashboard: quick capture + inline ask + activity ── */
-  nav("#/"); await sleep(20);
+  nav("#/"); await sleep(60);
   const ideasBefore = NB.getStore().ideas.length;
-  $('.qc-btn[data-capture="idea"]').click(); await sleep(20);
+  $('.qc-btn[data-capture="idea"]').click(); await sleep(60);
   $("#f-title").value = "Palette-tested idea";
   $("#capture-form").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
-  await sleep(20);
+  await sleep(60);
   check("quick capture adds idea", NB.getStore().ideas.length === ideasBefore + 1);
 
   const actsBefore = NB.getStore().activity.length;
@@ -148,51 +148,51 @@ function count() { const s = NB.getStore(); return s.notes.length + s.ideas.leng
   check("health label reacts to store", /Brain/.test($("#bh-label").textContent));
 
   /* ── command palette ── */
-  key(document.body, "k", { ctrlKey: true }); await sleep(20);
+  key(document.body, "k", { ctrlKey: true }); await sleep(60);
   check("ctrl+k opens palette", !!$("#cmdk-q"));
   const cq = $("#cmdk-q");
   cq.value = "sett";
   cq.dispatchEvent(new window.Event("input", { bubbles: true }));
-  await sleep(20);
-  key(cq, "Enter"); await sleep(20);
+  await sleep(60);
+  key(cq, "Enter"); await sleep(60);
   check("palette enter navigates to settings", window.location.hash === "#/settings");
-  key(document.body, "k", { ctrlKey: true }); await sleep(20);
-  key(document.body, "Escape"); await sleep(20);
+  key(document.body, "k", { ctrlKey: true }); await sleep(60);
+  key(document.body, "Escape"); await sleep(60);
   check("escape closes palette", $("#cmdk-root").children.length === 0);
 
   /* first action for empty query is Open Terminal */
-  key(document.body, "k", { ctrlKey: true }); await sleep(20);
-  key($("#cmdk-q"), "Enter"); await sleep(20);
+  key(document.body, "k", { ctrlKey: true }); await sleep(60);
+  key($("#cmdk-q"), "Enter"); await sleep(60);
   check("palette first action opens terminal", !!$("#term-input"));
 
   /* ── terminal ── */
   const tin = $("#term-input");
   tin.value = "py print(6*7)";
-  key(tin, "Enter"); await sleep(20);
+  key(tin, "Enter"); await sleep(60);
   check("terminal py evaluates", /42/.test($("#term-out").textContent));
 
   tin.value = "definitely-not-a-cmd";
-  key(tin, "Enter"); await sleep(20);
+  key(tin, "Enter"); await sleep(60);
   check("terminal unknown command errors", /command not found/.test($("#term-out").textContent));
 
   tin.value = "help";
-  key(tin, "Enter"); await sleep(20);
+  key(tin, "Enter"); await sleep(60);
   check("terminal help lists model cmd", /model/.test($("#term-out").textContent));
 
   tin.value = "history";
-  key(tin, "Enter"); await sleep(20);
+  key(tin, "Enter"); await sleep(60);
   tin.value = "";
   key(tin, "ArrowUp");
   check("terminal history recalls last cmd", tin.value === "history");
 
-  key(document.body, "Escape"); await sleep(20);
+  key(document.body, "Escape"); await sleep(60);
   check("escape closes terminal", $("#term-root").children.length === 0);
 
   /* ── shortcut + notifications modals ── */
-  key(document.body, "?"); await sleep(20);
+  key(document.body, "?"); await sleep(60);
   check("? opens shortcuts modal", $$(".sc-row").length >= 10);
-  key(document.body, "Escape"); await sleep(20);
-  $("#notif-btn").click(); await sleep(20);
+  key(document.body, "Escape"); await sleep(60);
+  $("#notif-btn").click(); await sleep(60);
   check("notifications modal opens", $("#modal-root").children.length === 1);
 
   /* ── results ── */

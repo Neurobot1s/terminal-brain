@@ -21,13 +21,15 @@ SHIP these files (everything in the repo root):
 
 DO NOT SHIP:  tests/  .env*  node_modules/  .git*
 
-No PHP, no server, no build step — AI calls go from the browser to
-NVIDIA's API (integrate.api.nvidia.com) with automatic relay fallback:
-  1. your own relay (Settings → AI Connection, optional — see
-     nvidia-relay.js for a free 2-minute Cloudflare Worker deploy)
-  2. direct call
-  3. public CORS relays (no setup needed, works on GitHub Pages)
-The first route that answers is remembered for next time.
+No PHP, no server, no build step — and NO SETUP for AI:
+  • A built-in NVIDIA key is embedded in js/ai.js, so AI
+    works out of the box.
+  • The browser calls NVIDIA's CORS-open NVCF endpoint
+    (api.nvcf.nvidia.com) DIRECTLY — it accepts any origin,
+    so GitHub Pages needs no relay.
+  • Model ids/versions are refreshed from NVIDIA's own
+    discovery API at runtime (self-healing), with fallback
+    routes: your optional relay → integrate.api.nvidia.com.
 
 ───────────────────────────────────────────────────────
  AFTER DEPLOY — 30-SECOND CHECK
@@ -37,10 +39,12 @@ The first route that answers is remembered for next time.
    (stale look? Ctrl+Shift+R to bypass cache)
 
 2) AI answers?   open the site, press ` , type:  aitest
-   Expect: "✓ AI connection OK (NVIDIA → nvidia/… via …)"
-   If it says no key: Settings → AI Connection → paste a
-   FREE key from build.nvidia.com (starts with nvapi-,
-   stored on-device only).
+   Expect: "✓ AI connection OK (NVIDIA → … via nvidia-nvcf)"
+   No key needed — the built-in one just works.
+   Want your own quota? Settings → AI Connection → paste a
+   FREE key from build.nvidia.com (nvapi-…, stored on-device
+   only). It always wins over the built-in key; `key clear`
+   in the terminal goes back to built-in.
 
    Offline check: open index.html straight from disk
    (file://) — everything except Ask runs locally.
@@ -48,16 +52,16 @@ The first route that answers is remembered for next time.
 ───────────────────────────────────────────────────────
  KEY FACTS
 ───────────────────────────────────────────────────────
- • AI models: NVIDIA Nemotron only, via NVIDIA's own API
-   (default: nemotron-3.5-lightning-30b-a3b). No key is
-   embedded — paste your free key once in Settings →
-   AI Connection or terminal:  key nvapi-…
+ • AI models (all NVIDIA-hosted, zero setup):
+   - GPT-OSS 20B — fast (default)
+   - Llama 3.2 11B — balanced
+   - Llama 3.2 90B — deep
  • Model switch: Settings → AI Connection, or terminal
-   `model lightning` / `model super` / `model nano`
+   `model fast` / `model balanced` / `model deep`
    (saved per device).
  • Relay (optional, for max reliability): deploy
    nvidia-relay.js to Cloudflare Workers and paste the URL
-   in Settings → AI Connection.
+   in Settings → AI Connection — it gets tried first.
  • All data in localStorage on the device. Export/Import
    in Settings → Data.
  • Terminal: ` key · help · py 6*7 · ask <question>

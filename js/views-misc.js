@@ -49,11 +49,11 @@
         '<div class="row-between"><span>Weekly digest (demo)</span><label class="switch"><input type="checkbox" id="set-digest"><span class="slider"></span></label></div>' +
       "</section>" +
       '<section class="panel"><h3>AI Connection</h3>' +
-        '<p class="muted">The AI answers questions using your memories, powered by <strong>NVIDIA Nemotron</strong> (direct from NVIDIA\'s API). Get a <strong>free key</strong> at <a class="panel-link" href="https://build.nvidia.com" target="_blank" rel="noopener">build.nvidia.com</a> (starts with nvapi-) and paste it below — it stays on this device.</p>' +
+        '<p class="muted">AI works out of the box — a built-in NVIDIA key is included. Powered by <strong>NVIDIA models</strong> called straight from your browser (NVIDIA\'s CORS-open endpoint). Optionally paste your own <strong>free key</strong> from <a class="panel-link" href="https://build.nvidia.com" target="_blank" rel="noopener">build.nvidia.com</a> to use your own quota — it stays on this device.</p>' +
         '<div class="ai-model-row"><label class="muted-xs" for="ai-model">Model</label><select id="ai-model"></select>' +
           '<button class="btn btn-outline btn-sm" id="ai-model-save">Use this model</button></div>' +
-        '<div class="row-between"><span>Custom key</span><code id="ai-key-preview" class="key-preview"></code></div>' +
-        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Paste your free NVIDIA key (nvapi-…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="row-between"><span>Key in use</span><code id="ai-key-preview" class="key-preview"></code></div>' +
+        '<div class="ai-key-row"><input id="ai-key-input" class="key-input" placeholder="Optional: your own NVIDIA key (nvapi-…)" autocomplete="off" spellcheck="false" /></div>' +
         '<div class="ai-key-row"><input id="ai-relay-input" class="key-input" placeholder="Advanced: own relay URL (optional — auto otherwise)" autocomplete="off" spellcheck="false" /></div>' +
         '<div class="ai-key-row">' +
           '<button class="btn btn-primary btn-sm" id="ai-key-save">Save key</button>' +
@@ -81,15 +81,16 @@
 
     var prefs = loadPrefs();
     var keyPrev = $("#ai-key-preview", root);
-    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "no key set"; }
-    keyPrev.textContent = maskKey(NB.getAIKey());
+    function maskKey(k) { return k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "built-in (no override)"; }
+    function refreshKeyPrev() { keyPrev.textContent = NB.hasCustomKey ? maskKey(NB.getAIKey()) : "built-in key — works out of the box"; }
+    refreshKeyPrev();
     $("#ai-key-save", root).addEventListener("click", function () {
       var v = $("#ai-key-input", root).value.trim();
       if (!v) { toast("Paste a key first.", "err"); return; }
       NB.setAIKey(v);
-      keyPrev.textContent = maskKey(NB.getAIKey());
+      refreshKeyPrev();
       $("#ai-key-input", root).value = "";
-      toast("Key saved locally.");
+      toast("Your key saved locally — it overrides the built-in one.");
     });
     $("#ai-key-test", root).addEventListener("click", function () {
       var out = $("#ai-test-out", root);
@@ -102,8 +103,8 @@
     });
     $("#ai-key-reset", root).addEventListener("click", function () {
       NB.setAIKey("");
-      keyPrev.textContent = maskKey(NB.getAIKey());
-      toast("Key cleared — paste an NVIDIA key to use Ask.", "warn");
+      refreshKeyPrev();
+      toast("Override cleared — back to the built-in key.");
       refreshEnv();
     });
 
@@ -120,13 +121,7 @@
 
     /* model picker → localStorage (static hosting — no server writes) */
     var modelSel = $("#ai-model", root), envOut = $("#ai-env-out", root), testOut = $("#ai-test-out", root);
-    function modelLabel(m) {
-      var s = String(m);
-      if (s.indexOf("lightning") !== -1) return "NVIDIA Nemotron Lightning (fast)";
-      if (s.indexOf("super") !== -1) return "NVIDIA Nemotron Super (balanced)";
-      if (s.indexOf("nano") !== -1) return "NVIDIA Nemotron Nano Omni (reasoning)";
-      return s;
-    }
+    function modelLabel(m) { return NB.aiModelLabel ? NB.aiModelLabel(m) : String(m); }
     (NB.AI_MODELS || []).forEach(function (m) {
       var o = document.createElement("option");
       o.value = m;

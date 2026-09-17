@@ -334,12 +334,13 @@
     key: { desc: "set/view AI key override", run: function (args) {
       if (!args.length) {
         var k = NB.getAIKey();
-        return [["t-info", "key: " + (k ? (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "none — get a free one at build.nvidia.com (nvapi-…)")], ["t-dim", "  set one:  key nvapi-…   ·   clear:  key clear"]];
+        var src = NB.hasCustomKey ? "your key: " + (k.length > 14 ? k.slice(0, 7) + "…" + k.slice(-4) : k) : "built-in key active (AI works out of the box)";
+        return [["t-info", src], ["t-dim", "  use your own:  key nvapi-…   ·   back to built-in:  key clear"]];
       }
       var v = args.join("");
-      if (v.toLowerCase() === "clear") { NB.setAIKey(""); return [["t-ok", "key cleared"]]; }
+      if (v.toLowerCase() === "clear") { NB.setAIKey(""); return [["t-ok", "override cleared — built-in key in use"]]; }
       NB.setAIKey(v);
-      return [["t-ok", "key saved on this device — run 'aitest' to verify"]];
+      return [["t-ok", "your key saved on this device — run 'aitest' to verify"]];
 } },
     aitest: { desc: "test AI connection", run: function () {
       NB.testAI().then(function (r) {
@@ -356,19 +357,18 @@
     model: { desc: "show/set AI model", run: function (args) {
       var MODELS = NB.AI_MODELS || [];
       if (!args.length) {
-        return [["t-info", "active model: " + (NB.getAIModel ? NB.getAIModel() : (MODELS[0] || "nvidia"))], ["t-dim", "  switch:  model lightning   ·   model super   ·   model nano"]];
+        return [["t-info", "active model: " + (NB.getAIModel ? NB.aiModelLabel(NB.getAIModel()) : MODELS[0] || "nvidia")], ["t-dim", "  switch:  model fast | balanced | deep"]];
       }
       var want = args.join(" ").toLowerCase();
       var target = null;
-      if (want.indexOf("light") !== -1) target = MODELS[0];
-      else if (want.indexOf("super") !== -1) target = MODELS[1];
-      else if (want.indexOf("nano") !== -1) target = MODELS[2];
+      if (/fast|gpt|20b|light/.test(want)) target = MODELS[0];
+      else if (/balanc|11b|super|mid/.test(want)) target = MODELS[1];
+      else if (/deep|90b|large|nano/.test(want)) target = MODELS[2];
       else if (MODELS.indexOf(want) !== -1) target = want;
-      else if (want.indexOf("nemotron") !== -1 || want.indexOf("nvidia") !== -1 || want.indexOf("nv") !== -1) target = MODELS[0];
-      if (!target) return [["t-err", "unknown model — try: model lightning | model super | model nano"]];
+      if (!target) return [["t-err", "unknown model — try: model fast | model balanced | model deep"]];
       var ok = NB.setAIModel(target);
       return ok
-        ? [["t-ok", "✓ model set on this device: " + target], ["t-dim", "  takes effect on your next ask"]]
+        ? [["t-ok", "✓ model set on this device: " + NB.aiModelLabel(target)], ["t-dim", "  takes effect on your next ask"]]
         : [["t-err", "could not save (storage blocked?) — keeping current model"]];
     } },
     sudo: { desc: "nice try", run: function () { return [["t-err", "sudo: permission denied — this brain belongs to tanishq 😄"]]; } },
