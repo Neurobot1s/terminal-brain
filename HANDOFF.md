@@ -6,6 +6,11 @@
 ## Current state (2026-09-17) — ALL GREEN
 All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 checks), `ai`. 23/23 E2E at the production origin (jsdom harness `/tmp/nb-e2e.js` — temp, not in repo). All 12 JS files syntax-clean. Nothing pending.
 
+## Latest round (evening)
+- **AI prompt**: two-step scan — answer from memories first; if not covered, answer from general knowledge and NEVER say "no relevant memory". Verified live (Japan-PM question answered from GK against an unrelated brain).
+- **Voice double-print fixed at 3 levels**: echo guard (drops mic pickup of NeuroBot's own TTS via `lastSpokeText`), session-wide repeat dedupe (`said{}` map), instant bail on NVIDIA's deterministic speech 404/500 (no more chain-limbo window). TTS status now says "Speaking with your device voice…" (no "busy").
+- **Terminal agent commands** (terminal.js): `new <kind> [title]` instant capture (no modal), `rm <kind> <n>`, `pin <kind> <n>`, `idea <n> <status>`, `goal <n> <pct>`, plus existing `ls/find/cd/ask/export/theme`. One duplicate `export` entry was created and removed during this edit — final file has exactly one `export:` (line ~357) and passes syntax + all suites.
+
 ## Architecture
 - `window.NB` namespace, classic scripts loaded in `index.html` order: core → core-part2 → prefs → **ai** → views-dashboard → views-collections → views-kanban → views-misc → **voice** → main → terminal → fx. Load order matters (voice.js defines `NB.openLive` after views-misc).
 - Router: hash-based (`main.js`). Modals via `NB.openModal`. Store: `localStorage`, CRUD in core-part2.

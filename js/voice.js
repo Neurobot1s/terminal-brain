@@ -853,7 +853,7 @@
         markNvidiaDown();
         refreshFoot();
         var engine = NB.voiceEngineLabel();
-        if (!engine.tts) setStatus("Speaking with the device voice (NVIDIA TTS busy)…", "live");
+        if (!engine.tts) setStatus("Speaking with your device voice…", "live");
         browserSpeak(text, done);
       });
     }

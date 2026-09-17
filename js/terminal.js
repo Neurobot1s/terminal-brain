@@ -206,7 +206,11 @@
         ["help", "show this list"], ["whoami", "who built this"], ["stats", "brain summary"],
         ["health", "brain health"], ["ls <kind>", "list notes/ideas/goals/knowledge"],
         ["find <query>", "search everything"], ["cd <page>", "jump to a page"],
-        ["new <kind>", "capture note/idea/goal/knowledge"], ["ask <question>", "query the AI"],
+        ["new <kind> [title]", "instant capture: new note Buy milk (no form)",],
+        ["rm <kind> <n> · pin <kind> <n>", "delete / pin an item from ls"],
+        ["idea <n> <status>", "move idea: new/exploring/building/completed"],
+        ["goal <n> <pct>", "set goal progress 0–100"],
+        ["ls <kind> · find <query>", "list / search your brain"], ["ask <question>", "query the AI"],
         ["py <code>", "mini python (print, math, vars)"], ["print <text>", "echo text as output"],
         ["key / aitest / model", "AI key (NVIDIA), connection test, model switch"],
         ["voice", "probe NVIDIA voice (STT + TTS) for Live"],
@@ -281,9 +285,58 @@
     new: { desc: "capture something", run: function (args) {
       var map = { note: "note", idea: "idea", goal: "goal", thought: "knowledge", knowledge: "knowledge" };
       var kind = map[(args[0] || "").toLowerCase()];
-      if (!kind) return [["t-err", "usage: new note | idea | goal | knowledge"]];
+      if (!kind) return [["t-err", "usage: new <kind> [title…] — kinds: note, idea, goal, knowledge"]];
+      var title = args.slice(1).join(" ").trim();
+      if (title) {
+        /* instant capture — no modal */
+        var d = { title: title.slice(0, 300), body: "" };
+        if (kind === "note") NB.addNote(Object.assign(d, { category: "General" }));
+        else if (kind === "idea") NB.addIdea(Object.assign(d, { category: "General", status: "new" }));
+        else if (kind === "goal") NB.addGoal(Object.assign(d, { category: "General", progress: 0, status: "active", deadline: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10) }));
+        else NB.addKnowledge(Object.assign(d, { topic: (NB.TOPICS || ["General"])[0], source: "terminal" }));
+        return [["t-ok", "✓ " + kind + " captured: " + d.title], ["t-dim", "  edit it on the " + kind + "s page"]];
+      }
       NB.openCapture(kind);
       return [["t-ok", "opening capture form for a new " + kind + "…"]];
+    } },
+    rm: { desc: "delete an item by number from ls", run: function (args) {
+      var what = (args[0] || "").toLowerCase();
+      if (!KINDS[what]) return [["t-err", "usage: rm notes 2   (kind + number from ls)"]];
+      var n = parseInt(args[1], 10);
+      var list = getStore()[what];
+      if (!n || n < 1 || n > list.length) return [["t-err", "rm: no item #" + args[1] + " in " + what + " (1–" + list.length + ")"]];
+      var x = list[n - 1];
+      var fn = { note: NB.removeNote, idea: NB.removeIdea, goal: NB.removeGoal, knowledge: NB.removeKnowledge }[KINDS[what]];
+      fn(x.id);
+      return [["t-ok", "✓ deleted [" + KINDS[what] + "] " + x.title]];
+    } },
+    pin: { desc: "pin/unpin an item", run: function (args) {
+      var what = (args[0] || "").toLowerCase();
+      if (!KINDS[what]) return [["t-err", "usage: pin notes 2"]];
+      var n = parseInt(args[1], 10), list = getStore()[what];
+      if (!n || n < 1 || n > list.length) return [["t-err", "pin: no item #" + args[1] + " in " + what]];
+      var x = list[n - 1];
+      NB.togglePin(KINDS[what], x.id);
+      return [["t-ok", "✓ " + (x.pinned ? "unpinned" : "pinned") + " [" + KINDS[what] + "] " + x.title]];
+    } },
+    idea: { desc: "move an idea to a status", run: function (args) {
+      var n = parseInt(args[0], 10);
+      var to = (args[1] || "").toLowerCase();
+      var map = { new: "new", exploring: "exploring", building: "building", completed: "completed" };
+      if (!n || !map[to]) return [["t-err", "usage: idea 2 building   (statuses: new, exploring, building, completed)"]];
+      var list = getStore().ideas;
+      if (n < 1 || n > list.length) return [["t-err", "idea: no idea #" + args[0] + " (1–" + list.length + ")"]];
+      NB.updateIdea(list[n - 1].id, { status: map[to] });
+      return [["t-ok", "✓ [idea] " + list[n - 1].title + " → " + map[to]]];
+    } },
+    goal: { desc: "set goal progress", run: function (args) {
+      var n = parseInt(args[0], 10), p = parseInt(args[1], 10);
+      if (!n || isNaN(p)) return [["t-err", "usage: goal 2 50   (item # from ls goals + percent)"]];
+      var list = getStore().goals;
+      if (n < 1 || n > list.length) return [["t-err", "goal: no goal #" + args[0] + " (1–" + list.length + ")"]];
+      p = Math.max(0, Math.min(100, p));
+      NB.updateGoal(list[n - 1].id, { progress: p });
+      return [["t-ok", "✓ [goal] " + list[n - 1].title + " → " + p + "%"]];
     } },
     ask: { desc: "query the AI", run: function (args) {
       var q = args.join(" ").trim();
