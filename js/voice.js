@@ -59,6 +59,12 @@
   var REQ_TIMEOUT = 7000;   /* per HTTP request */
   var FAIL_BACKOFF = 10 * 60 * 1000;
 
+  /* turn-taking */
+  var PAUSE_MS = 5000;      /* hands-free: send after a 5s pause */
+  var HARD_CAP_MS = 60000;  /* never record longer than this */
+  var QUIET_RMS = 0.035;    /* mic level under which we count silence */
+  var ECHO_GAP_MS = 800;    /* wait after TTS before the mic reopens */
+
   function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
@@ -402,7 +408,10 @@
   /* ---------- browser fallbacks (only when NVIDIA can't answer) ---------- */
 
   /* live recognition while the user talks — gives interim text + a
-     final transcript used if NVIDIA ASR stays unreachable */
+     final transcript used if NVIDIA ASR stays unreachable.
+     The final transcript is REBUILT from the results list on every
+     event instead of accumulated — accumulating is what makes the
+     same words print twice in browsers that re-deliver results. */
   function browserListen(onPartial) {
     var SR = Rec();
     if (!SR) return null;
@@ -413,12 +422,14 @@
     rec.interimResults = true;
     rec.lang = "en-US";
     rec.onresult = function (e) {
-      var interim = "";
-      for (var i = e.resultIndex; i < e.results.length; i++) {
-        var t = e.results[i][0].transcript || "";
-        if (e.results[i].isFinal) finalText += t;
+      var fin = "", interim = "";
+      for (var i = 0; i < e.results.length; i++) {
+        var r = e.results[i];
+        var t = (r && r[0] && r[0].transcript) || "";
+        if (r.isFinal) fin += t;
         else interim += t;
       }
+      finalText = fin.replace(/\s+/g, " ").trim();
       if (onPartial) onPartial((finalText + " " + interim).replace(/\s+/g, " ").trim());
     };
     rec.onerror = function () { failed = true; };
@@ -426,8 +437,11 @@
     return {
       stop: function () {
         try { rec.stop(); } catch (e) {}
-        return failed ? "" : finalText.trim();
+        return failed ? "" : finalText;
       },
+      /* Chrome finalises the last result AFTER stop() — read this
+         a beat later for the late-arriving words */
+      getText: function () { return failed ? "" : finalText; },
     };
   }
 
@@ -518,12 +532,12 @@
      NEUROBOT LIVE — the voice conversation modal
      ============================================================ */
   NB.openLive = function () {
-    var modal = NB.openModal({ subtitle: "$ neurobot live --voice", title: "NeuroBot Live" });
+    var modal = NB.openModal({ subtitle: "$ neurobot live --voice", title: "NeuroBot Live", large: true });
 
     modal.body.innerHTML =
       '<div class="live">' +
         '<div class="live-stage">' +
-          '<button class="live-orb" id="live-orb" type="button" aria-label="Start or stop listening">' +
+          '<button class="live-orb idle" id="live-orb" type="button" aria-label="Start or stop listening">' +
             '<span class="live-ring"></span><span class="live-ring r2"></span>' +
             '<span class="live-core" id="live-core">🎙</span>' +
           "</button>" +
@@ -540,6 +554,7 @@
           '<button class="btn btn-outline btn-sm" id="live-stop" hidden>Stop voice</button>' +
           '<button class="btn btn-outline btn-sm" id="live-save" hidden>Save transcript</button>' +
         "</div>" +
+        '<div class="live-hint">talk, then pause — neurobot sends after a 5-second break</div>' +
         '<div class="live-foot" id="live-foot"></div>' +
       "</div>";
 
@@ -556,9 +571,10 @@
     var foot = modal.body.querySelector("#live-foot");
 
     var micStream = null, recorder = null, chunks = [], analyser = null, audioCtx = null;
-    var rafId = null, vadTimer = null, spokeAt = 0, quietSince = 0;
+    var rafId = null, capTimer = null, spokeAt = 0, quietSince = 0, sessionStart = 0;
     var listening = false, handsFree = false, busy = false, closed = false;
     var recognizer = null, browserFinal = "", turns = [];
+    var latestPartial = "";
 
     function esc(s) { return NB.esc(s); }
 
@@ -598,11 +614,12 @@
       if (turns.length) saveBtn.hidden = false;
     }
 
-    /* ---------- metering + silence detection ---------- */
+    /* ---------- metering + silence detection ----------
+       Records until you stop talking for PAUSE_MS (5s), then sends.
+       The countdown shows in the status line. */
     function startMeter() {
       if (!analyser || !audioCtx) return;
       var buf = new Uint8Array(analyser.fftSize);
-      var ticks = 0;
       function loop() {
         if (!listening) return;
         analyser.getByteTimeDomainData(buf);
@@ -610,22 +627,29 @@
         for (var i = 0; i < buf.length; i++) { var d = (buf[i] - 128) / 128; sum += d * d; }
         var rms = Math.sqrt(sum / buf.length);
         orb.style.setProperty("--level", Math.min(1, rms * 4.5).toFixed(3));
-        if (rms > 0.035) { spokeAt = Date.now(); quietSince = 0; }
-        else if (spokeAt && !quietSince) quietSince = Date.now();
-        if (spokeAt && quietSince && Date.now() - quietSince > 1400 && Date.now() - spokeAt > 700) {
-          stopListening();
-          return;
+        var now = Date.now();
+        if (rms > QUIET_RMS) {
+          spokeAt = now;
+          quietSince = 0;
+        } else if (spokeAt && !quietSince) {
+          quietSince = now;
         }
-        ticks++;
-        if (ticks > 900) { stopListening(); return; }
+        if (spokeAt && quietSince && now - quietSince >= PAUSE_MS) { stopListening(); return; }
+        if (now - sessionStart > HARD_CAP_MS) { stopListening(); return; }
         rafId = requestAnimationFrame(loop);
+        if (spokeAt && quietSince) {
+          var left = PAUSE_MS - (now - quietSince);
+          if (left > 0 && left <= PAUSE_MS) setStatus("Sending in " + Math.max(1, Math.ceil(left / 1000)) + "s…", "live");
+        } else if (spokeAt) {
+          setStatus("Listening… speak now", "live");
+        }
       }
       rafId = requestAnimationFrame(loop);
     }
 
     function stopMeter() {
       if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-      if (vadTimer) { clearTimeout(vadTimer); vadTimer = null; }
+      if (capTimer) { clearTimeout(capTimer); capTimer = null; }
       orb.style.removeProperty("--level");
     }
 
@@ -667,13 +691,13 @@
           });
 
           listening = true;
-          spokeAt = 0; quietSince = 0;
+          spokeAt = 0; quietSince = 0; sessionStart = Date.now();
           setMode("listening");
-          setStatus(recognizer ? "Listening… speak now" : "Listening… speak now (NVIDIA transcribes on stop)", "live");
+          setStatus("Listening… speak now", "live");
           talkBtn.textContent = "Stop & send";
           startMeter();
-          /* hard cap so a dropped recorder can't hang the UI */
-          vadTimer = setTimeout(function () { if (listening) stopListening(); }, 30000);
+          /* hard cap so a dropped recorder/VAD can't hang the UI */
+          capTimer = setTimeout(function () { if (listening) stopListening(); }, HARD_CAP_MS + 2000);
         })
         .catch(function (err) {
           setStatus(/denied|NotAllowed/i.test(err && err.name || "") ?
@@ -688,9 +712,21 @@
       listening = false;
       stopMeter();
       talkBtn.textContent = "Start talking";
-      browserFinal = recognizer ? recognizer.stop() : "";
+      /* Chrome finalises its last recognition result just after stop();
+         grab the rebuilt transcript on the next tick */
+      var rec = recognizer;
       recognizer = null;
-      if (recorder && recorder.state !== "inactive") {
+      if (rec) {
+        try { rec.stop(); } catch (e) {}
+        setTimeout(function () {
+          browserFinal = rec.getText ? rec.getText() : "";
+          if (recorder && recorder.state !== "inactive") {
+            try { recorder.stop(); } catch (e) { finishListening(); }
+          } else {
+            finishListening();
+          }
+        }, 250);
+      } else if (recorder && recorder.state !== "inactive") {
         try { recorder.stop(); } catch (e) { finishListening(); }
       } else {
         finishListening();
@@ -704,31 +740,27 @@
     }
 
     function finishListening() {
+      if (busy) return;
       busy = true;
       releaseMic();
-      var browserText = browserFinal || "";
-      browserFinal = "";
       var blob = chunks.length ? new Blob(chunks, { type: recorder && recorder.mimeType || "audio/webm" }) : null;
       chunks = [];
-
-      if (!blob || blob.size < 1200) {
-        /* too short to be speech */
-        busy = false;
-        setMode("idle");
-        setStatus("That was too short — tap and talk for a moment.", "warn");
-        return;
-      }
+      var browserText = browserFinal || "";
+      browserFinal = "";
 
       setMode("thinking");
-      setStatus("Transcribing with NVIDIA…");
+      setStatus("Transcribing…");
 
-      var nvidia = (hasRecorder() && !nvidiaCoolingDown())
+      /* NVIDIA first; the device recogniser is the fallback. No minimum
+         length — whatever came out of the mic gets sent. */
+      var nvidia = (blob && !nvidiaCoolingDown())
         ? toWav(blob).then(function (wav) {
             var b64 = b64FromBytes(new Uint8Array(wav));
             return nvidiaStt(b64, new Blob([wav], { type: "audio/wav" }));
           })
         : Promise.reject(new Error("skipped"));
 
+      var seen = {};
       nvidia.then(function (r) {
         clearNvidiaDown();
         return { text: r.text, engine: r.model.label + " (NVIDIA)" };
@@ -737,15 +769,20 @@
         return { text: browserText, engine: browserText ? "device speech recognition" : "" };
       }).then(function (got) {
         refreshFoot();
-        if (!got.text) {
+        /* one utterance = one bubble: drop duplicate/empty results that
+           can arrive from both engines */
+        var text = String(got.text || "").replace(/\s+/g, " ").trim();
+        var key = text.toLowerCase();
+        if (!text || seen[key]) {
           busy = false;
           setMode("idle");
-          setStatus("Couldn't make out any words — try again a little closer to the mic.", "warn");
+          setStatus("Couldn't hear that — tap the orb and try again.", "warn");
           return;
         }
-        bubble("user", got.text);
-        pushTurn("you", got.text);
-        ask(got.text);
+        seen[key] = true;
+        bubble("user", text);
+        pushTurn("you", text);
+        ask(text);
       });
     }
 
@@ -782,7 +819,10 @@
         if (closed) return;
         setMode("idle");
         setStatus(handsFree ? "Listening again…" : "Tap the orb to keep talking");
-        if (handsFree) setTimeout(function () { startListening(); }, 500);
+        if (handsFree) {
+          /* let the tail of the answer clear the mic before reopening */
+          setTimeout(function () { if (!closed && !busy) startListening(); }, ECHO_GAP_MS);
+        }
       };
 
       var nvidia = nvidiaCoolingDown() ? Promise.reject(new Error("skipped")) : nvidiaTts(text);
@@ -819,6 +859,7 @@
       handsBtn.textContent = "Hands-free: " + (handsFree ? "on" : "off");
       handsBtn.setAttribute("aria-pressed", handsFree ? "true" : "false");
       handsBtn.className = "btn btn-sm " + (handsFree ? "btn-primary" : "btn-outline");
+      talkBtn.textContent = handsFree ? "Interrupt" : "Start talking";
       if (handsFree && !listening && !busy) startListening();
       if (!handsFree) setStatus("Hands-free off");
     });

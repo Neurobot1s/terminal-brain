@@ -45,7 +45,8 @@ class FakeRecorder {
   stop() {
     this.state = "inactive";
     recorderStopped++;
-    if (this.ondataavailable) this.ondataavailable({ data: new window.Blob([new Uint8Array(6000)]) });
+    /* deliberately tiny — there must be NO minimum-size gate */
+    if (this.ondataavailable) this.ondataavailable({ data: new window.Blob([new Uint8Array(300)]) });
     if (this.onstop) this.onstop();
   }
 }
@@ -65,13 +66,18 @@ class FakeAudioCtx {
 window.AudioContext = FakeAudioCtx;
 window.webkitAudioContext = FakeAudioCtx;
 
-/* browser speech recognition stub — feeds a final transcript */
+/* browser speech recognition stub — re-delivers the SAME result twice
+   (what Chrome does) to prove the transcript can't print double */
 class FakeSR {
   start() { if (this.onstart) this.onstart(); }
   stop() {
-    if (this.onresult) {
-      this.onresult({ resultIndex: 0, results: [[{ transcript: "what are my ai goals" }]].map((r) => Object.assign(r, { isFinal: true })) });
-    }
+    if (!this.onresult) return;
+    const fire = () => this.onresult({
+      resultIndex: 0,
+      results: [[{ transcript: "what are my ai goals" }]].map((r) => Object.assign(r, { isFinal: true })),
+    });
+    fire();
+    fire();
   }
 }
 window.SpeechRecognition = FakeSR;
@@ -160,8 +166,10 @@ function check(label, fn) {
   $("#live-talk").click();
   await sleep(500);
   check("recorder released", () => recorderStopped >= 1);
-  check("question reached the AI", () => NB.__asked === "what are my ai goals");
-  check("user bubble rendered", () => /what are my ai goals/i.test($("#live-thread").textContent));
+  check("question reached the AI exactly once (no double-print)", () => NB.__asked === "what are my ai goals");
+  check("user bubble rendered once", () =>
+    $("#live-thread").textContent.split("what are my ai goals").length - 1 === 1);
+  check("tiny utterance not blocked by a minimum-size gate", () => recorderStopped >= 1 && !!NB.__asked);
   check("answer bubble rendered", () => /three AI goals/.test($("#live-thread").textContent));
   check("device voice used when NVIDIA is offline", () => spoken.length >= 1);
   check("transcript save offered", () => $("#live-save").hidden === false);

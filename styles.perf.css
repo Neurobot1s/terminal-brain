@@ -213,10 +213,18 @@ textarea:focus-visible, [tabindex]:focus-visible {
 @keyframes liveRipple { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(1.55); opacity: 0; } }
 @keyframes liveSpin { to { transform: rotate(360deg); } }
 
-.live-status { font-size: 12.5px; color: var(--muted); text-align: center; min-height: 18px; }
-.live-status.live { color: #fca5a5; }
-.live-status.warn { color: var(--warn); }
-.live-status.err { color: #fca5a5; }
+.live-status {
+  display: inline-block; font-size: 12px; color: var(--muted); text-align: center;
+  min-height: 18px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 3px 12px; border-radius: 999px; border: 1px solid transparent;
+  transition: all .18s var(--ease);
+}
+.live-status.live {
+  color: #fda4af; border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.07);
+  max-width: 92%;
+}
+.live-status.warn { color: var(--warn); border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.06); }
+.live-status.err { color: #fca5a5; border-color: rgba(248,113,113,.4); background: rgba(248,113,113,.07); }
 
 .live-meter { display: flex; align-items: flex-end; gap: 4px; height: 22px; opacity: .35; transition: opacity .2s var(--ease); }
 .live-meter.on { opacity: 1; }
@@ -234,10 +242,11 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .live-meter i:nth-child(7) { animation-delay: .7s; }
 
 .live-thread {
-  display: flex; flex-direction: column; gap: 8px; max-height: 34vh; overflow-y: auto;
-  padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: rgba(0,0,0,.22);
+  display: flex; flex-direction: column; gap: 9px; height: 40vh; overflow-y: auto;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(0,0,0,.22); scroll-behavior: smooth;
 }
+.live-hint { font-size: 10.5px; color: var(--faint); text-align: center; letter-spacing: .02em; }
 .live-empty { color: var(--faint); font-size: 12px; line-height: 1.6; text-align: center; padding: 12px 6px; }
 .live-bubble { display: flex; flex-direction: column; gap: 3px; max-width: 86%; animation: pop .2s var(--ease); }
 .live-bubble.user { align-self: flex-end; align-items: flex-end; }
@@ -269,7 +278,7 @@ textarea:focus-visible, [tabindex]:focus-visible {
 @media (max-width: 640px) {
   .live-orb { width: 88px; height: 88px; }
   .live-core { font-size: 25px; }
-  .live-thread { max-height: 30vh; }
+  .live-thread { height: 32vh; }
   .live-controls .btn { flex: 1 1 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
