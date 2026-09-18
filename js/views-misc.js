@@ -84,7 +84,7 @@
         '<div class="row-between"><span>Key in use</span><code id="kb-key-preview" class="key-preview"></code></div>' +
         '<div class="ai-key-row"><input id="kb-key-input" class="key-input" placeholder="Optional: your own Kernel key (sk_…)" autocomplete="off" spellcheck="false" /></div>' +
         '<div class="ai-key-row"><input id="kb-relay-input" class="key-input" placeholder="Optional: Cloudflare relay URL (https://…workers.dev)" autocomplete="off" spellcheck="false" /></div>' +
-        '<p class="muted muted-xs">On GitHub Pages, Kernel\'s REST API blocks browser calls (no CORS) — deploy <code>kernel-relay.js</code> to Cloudflare Workers (free, 2 min — see file header) and paste the URL above. Without it, agentBrowse falls back to in-site readers. The CDP + live view still connect directly.</p>' +
+        '<p class="muted muted-xs">Sessions run through Kernel\'s CORS-open MCP endpoint (mcp.onkernel.com) — it works straight from GitHub Pages, no relay needed. The CDP WebSocket + live view also connect directly.</p>' +
         '<div class="ai-key-row">' +
           '<button class="btn btn-primary btn-sm" id="kb-key-save">Save key</button>' +
           '<button class="btn btn-outline btn-sm" id="kb-key-reset">Clear override</button>' +
@@ -196,14 +196,14 @@
         toast("Back to the built-in Kernel key.");
       });
       $("#kb-test", root).addEventListener("click", function () {
-        kbOut.textContent = "$ kernel --check … listing browser sessions…";
+        kbOut.textContent = "$ kernel --check … reaching Kernel MCP …";
         kbOut.className = "ai-test-out pending";
         NB.kernelAgent.ready().then(function (ok) {
           if (ok) {
-            kbOut.textContent = "✓ Kernel reachable — cloud browser ready for agent runs.";
+            kbOut.textContent = "✓ Kernel reachable (MCP transport) — cloud browser ready for agent runs.";
             kbOut.className = "ai-test-out ok";
           } else {
-            kbOut.textContent = "⚠ Kernel REST unreachable (CORS) — deploy kernel-relay.js to Cloudflare Workers and paste its URL above, or agentBrowse will use the in-site readers.";
+            kbOut.textContent = "⚠ Kernel unreachable — check your connection, or the built-in key may be rate-limited. A relay URL below is still honored first.";
             kbOut.className = "ai-test-out err";
           }
         });

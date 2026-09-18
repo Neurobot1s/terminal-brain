@@ -4,17 +4,21 @@
    (kernel.sh) while you watch it live, inside NeuroBot.
 
    How it works from a static site (no server, no relay):
-   • Kernel's REST API at api.onkernel.com is CORS-open — the
-     browser can create and delete browser sessions directly
-     with the built-in key (or the user's own key from Settings).
-   • EVERY agent run spins up a FRESH browser with Kernel's
-     MAXIMUM idle timeout (72h) and the session is DELETED the
-     moment the run finishes — nothing ever sits idle. If the
-     account's concurrent-session limit is hit, the run reuses
-     the newest existing browser instead (tab-per-run still).
-   • The CDP WebSocket (wss://…/browser/cdp?jwt=…) accepts any
-     Origin — WebSockets aren't subject to CORS.
-   • Optional: deploy a kernel relay and paste its URL in
+   • Kernel's REST API (api.onkernel.com) sends NO CORS headers,
+     so browsers can't call it. BUT Kernel's MCP server at
+     https://mcp.onkernel.com/mcp IS CORS-open (ACAO: *, exposes
+     mcp-session-id) and accepts the same Bearer key — so the
+     browser creates, lists and deletes browser sessions through
+     the MCP `manage_browsers` tool directly. Zero infra.
+   • Sessions are created with Kernel's MAXIMUM idle timeout
+     (72h) and DELETED the moment the run finishes — nothing
+     ever sits idle. If the account's concurrent-session limit
+     is hit, we close the two oldest sessions to make room and
+     spin up a brand-new browser (never reuse if avoidable).
+   • The CDP WebSocket (wss://…/browser/cdp?jwt=…) from the MCP
+     payload accepts any Origin — WebSockets aren't subject to
+     CORS — so the driver connects straight to the cloud tab.
+   • Optional: a kernel-relay Worker can still be pasted in
      Settings — every run then goes through your own endpoint.
    ============================================================ */
 (function () {
@@ -26,18 +30,19 @@
      Settings → Kernel Browser (stored on their device only). */
   var BUILTIN_KEY = "sk_3f9ea184-1094-ee4e-f1ae-39ebe2637b9e.lfDHUAScxT67Xvn2NZcHbw8PpOgCF97fwG0wd57451w";
   var API = "https://api.onkernel.com";
+  var MCP_URL = "https://mcp.onkernel.com/mcp";
   var KEY_LS = "nb_kernel_key";
   var RELAY_LS = "nb_kernel_relay";
   var MAX_TIMEOUT_S = 259200; /* 72h — Kernel's max idle timeout */
 
-  /* "timeout on max": REST calls get a 2-minute budget, each CDP
+  /* "timeout on max": MCP/REST calls get a 2-minute budget, each CDP
      command gets 2 minutes, page-settle waits up to 20s. */
   var REST_TIMEOUT_MS = 120000;
   var CDP_TIMEOUT_MS = 120000;
   var SETTLE_CAP_MS = 20000;
 
   var currentLive = ""; /* live-view URL of the most recent run's browser */
-  /* jsdom test harness sets this: skip Kernel REST (fetch is stubbed) and
+  /* jsdom test harness sets this: skip Kernel transport (fetch is stubbed) and
      reuse the fake WebSocket directly — still exercises the full driver. */
   var TEST_MODE = false;
   try { TEST_MODE = typeof window !== "undefined" && window.NB_KERNEL_TEST === "1"; } catch (e) {}
@@ -50,32 +55,99 @@
   function apiKey() { return String(lsGet(KEY_LS) || BUILTIN_KEY).trim(); }
   function relayBase() { return String(lsGet(RELAY_LS) || (NB.getKernelRelay && NB.getKernelRelay()) || "").trim(); }
 
-  function restFetch(method, path, key, body) {
+  /* ============================================================
+     MCP transport — https://mcp.onkernel.com/mcp (CORS-open)
+     One HTTP session (mcp-session-id) is initialized lazily and
+     shared; every browser operation is a tools/call to
+     `manage_browsers` with an action argument. Responses are SSE
+     frames: `data: {jsonrpc...}` — we parse the last result line.
+     ============================================================ */
+  var mcpSession = ""; /* mcp-session-id from the initialize response */
+  var mcpReadyPromise = null;
+  var mcpNextId = 1;
+
+  function mcpInit() {
+    if (mcpSession) return Promise.resolve(mcpSession);
+    if (mcpReadyPromise) return mcpReadyPromise;
+    mcpReadyPromise = mcpRaw(null, {
+      jsonrpc: "2.0", id: mcpNextId++, method: "initialize",
+      params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "neurobot", version: "1.0" } },
+    }).then(function (hdrSid) {
+      mcpSession = hdrSid || "";
+      /* fire-and-forget handshake completion (202, no body) */
+      if (mcpSession) {
+        try {
+          fetch(MCP_URL, {
+            method: "POST",
+            headers: mcpHeaders(),
+            body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      return mcpSession;
+    }).catch(function (e) {
+      mcpReadyPromise = null; /* allow a later retry */
+      throw e;
+    });
+    return mcpReadyPromise;
+  }
+
+  function mcpHeaders() {
+    var h = {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      "Authorization": "Bearer " + apiKey(),
+    };
+    if (mcpSession) h["mcp-session-id"] = mcpSession;
+    return h;
+  }
+
+  /* one raw MCP POST → resolves { sid, data } (data = last SSE data frame) */
+  function mcpRaw(sessionId, payload) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REST_TIMEOUT_MS) : null;
-    var opts = {
-      method: method,
-      headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
-      signal: ctrl && ctrl.signal,
-      /* Kernel's REST API sends NO Access-Control-Allow-Origin header, so a
-         browser fetch from any other origin is blocked by CORS no matter
-         what. Browsers relax this ONLY in “no-cors” mode — which still
-         completes and works fine for fire-and-forget DELETES (the response
-         body is opaque, we never read it). Real data calls (create/list)
-         go through CORS-free transports — see kernelEnsure(). */
-      mode: method === "DELETE" ? "no-cors" : "cors",
+    var headers = {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      "Authorization": "Bearer " + apiKey(),
     };
-    if (body) opts.body = JSON.stringify(body);
-    return fetch(API + path, opts).then(function (r) {
+    if (sessionId) headers["mcp-session-id"] = sessionId;
+    return fetch(MCP_URL, {
+      method: "POST", headers: headers, body: JSON.stringify(payload),
+      signal: ctrl && ctrl.signal,
+    }).then(function (r) {
       if (timer) clearTimeout(timer);
-      if (method === "DELETE") return {}; /* opaque response — assume success */
-      return r.json().catch(function () { return {}; }).then(function (body) {
-        if (!r.ok) {
-          var err = new Error((body && body.message) || "kernel api " + r.status);
-          if (body && /org_limit_exceeded|limit/i.test(String(body.code || ""))) err.limit = true;
+      var sid = "";
+      try { sid = r.headers.get("mcp-session-id") || ""; } catch (e) {}
+      if (!r.ok) {
+        return r.text().catch(function () { return ""; }).then(function (t) {
+          var err = new Error("kernel mcp " + r.status + (t ? ": " + t.slice(0, 140) : ""));
+          err.status = r.status;
           throw err;
+        });
+      }
+      return r.text().then(function (txt) {
+        /* SSE: possibly several `data:` lines — keep the last parseable one */
+        var data = null, errObj = null;
+        var lines = txt.split("\n");
+        for (var i = 0; i < lines.length; i++) {
+          var l = lines[i];
+          if (l.indexOf("data:") !== 0) continue;
+          var body = l.slice(5).trim();
+          if (!body) continue;
+          try {
+            var j = JSON.parse(body);
+            if (j.error) errObj = j.error;
+            else data = j;
+          } catch (e) { /* non-JSON keepalive line */ }
         }
-        return body;
+        if (errObj) {
+          var e2 = new Error(errObj.message || "kernel mcp error");
+          e2.status = errObj.code;
+          throw e2;
+        }
+        if (payload && payload.method === "initialize") return { sid: sid, data: data };
+        return { sid: sid, data: data };
       });
     }).catch(function (e) {
       if (timer) clearTimeout(timer);
@@ -83,19 +155,89 @@
     });
   }
 
-  function createSession(key) {
-    /* body is REQUIRED — the API rejects bodyless POSTs with "missing body" */
-    return restFetch("POST", "/browsers", key, { timeout_seconds: MAX_TIMEOUT_S }).then(function (s) {
+  /* tools/call `manage_browsers` → parsed inner JSON (or plain text)
+     Throws err.limit = true when the org's concurrent cap is hit. */
+  function mcpBrowsers(args) {
+    return mcpInit().then(function (sid) {
+      var payload = {
+        jsonrpc: "2.0", id: mcpNextId++, method: "tools/call",
+        params: { name: "manage_browsers", arguments: args },
+      };
+      return mcpRaw(sid, payload).then(function (res) {
+        var r = res && res.data && res.data.result;
+        if (!r) throw new Error("kernel mcp: empty result");
+        if (r.is_error) {
+          var t = (r.content && r.content[0] && r.content[0].text) || "kernel error";
+          var err = new Error(String(t).slice(0, 300));
+          if (/limit|exceed|maximum|concurrent|org_|too many/i.test(err.message)) err.limit = true;
+          throw err;
+        }
+        var txt = (r.content && r.content[0] && r.content[0].text) || "";
+        try { return JSON.parse(txt); } catch (e) { return txt; } /* "deleted successfully" etc. */
+      }).catch(function (e) {
+        /* stale/unknown MCP session — re-initialize once and retry */
+        if ((e && (e.status === 404 || e.status === 400)) && mcpSession) {
+          mcpSession = ""; mcpReadyPromise = null;
+          return mcpInit().then(function () { return mcpBrowsers(args); });
+        }
+        throw e;
+      });
+    });
+  }
+
+  /* normalize an MCP browser object into the shape the driver expects */
+  function normBrowser(b) {
+    if (!b) return null;
+    return {
+      session_id: b.session_id || b.id || "",
+      base_url: b.base_url || "",
+      cdp_ws_url: b.cdp_ws_url || "",
+      browser_live_view_url: b.browser_live_view_url || b.live_view_url || "",
+      timeout_seconds: b.timeout_seconds || MAX_TIMEOUT_S,
+      name: b.name || "",
+    };
+  }
+
+  function sessionPayloads(s) {
+    /* MCP wraps: {"browser":{...}}; be liberal about the envelope */
+    var b = s && (s.browser || s.session || s);
+    return normBrowser(b);
+  }
+
+  function createSession(key) { /* key kept for signature compat */
+    return mcpBrowsers({
+      action: "create",
+      timeout_seconds: MAX_TIMEOUT_S,
+      name: "neurobot-" + Math.random().toString(36).slice(2, 8),
+    }).then(function (j) {
+      var s = sessionPayloads(j);
       if (!s || !s.session_id) throw new Error("kernel: unexpected create response");
       return s;
     });
   }
-  function listSessions(key) { return restFetch("GET", "/browsers", key).then(function (l) { return Array.isArray(l) ? l : []; }); }
-  function deleteSession(key, sid) {
-    return restFetch("DELETE", "/browsers/" + encodeURIComponent(sid), key).catch(function () {});
+
+  function getSession(key, sid) {
+    return mcpBrowsers({ action: "get", session_id: sid }).then(function (j) {
+      return sessionPayloads(j);
+    });
   }
 
-  /* ---------- tiny CDP-over-WebSocket client ---------- */
+  function listSessions(key) {
+    return mcpBrowsers({ action: "list" }).then(function (j) {
+      if (Array.isArray(j)) return j.map(normBrowser).filter(Boolean);
+      if (j && Array.isArray(j.items)) return j.items.map(normBrowser).filter(Boolean);
+      return [];
+    });
+  }
+
+  function deleteSession(key, sid) {
+    if (!sid) return Promise.resolve();
+    return mcpBrowsers({ action: "delete", session_id: sid }).catch(function () {});
+  }
+
+  /* ============================================================
+     Tiny CDP-over-WebSocket client (unchanged — WS has no CORS)
+     ============================================================ */
   function Cdp(wsUrl) {
     var WS = window.WebSocket || WebSocket;
     this.ws = new WS(wsUrl);
@@ -136,7 +278,7 @@
   Cdp.prototype.close = function () { try { this.ws.close(); } catch (e) {} };
 
   /* ---------- driver: one fresh TAB on a cloud browser ---------- */
-  var TAB_REUSE = false; /* tests flip this to skip real sockets + REST */
+  var TAB_REUSE = false; /* tests flip this to skip real sockets + transport */
 
   function openDriver(session) {
     var wsUrl = session.cdp ||
@@ -248,34 +390,38 @@
   }
 
   /* ---------- managed mode: fresh browser per run, deleted on finish ----------
-     1. POST /browsers with the max timeout → a brand-new Chromium.
-     2. If the org's concurrent limit is hit → reuse the newest existing
-        browser (a fresh TAB still isolates the run; nothing new lingers).
+     1. MCP manage_browsers create with the max timeout → a brand-new Chromium.
+     2. If the org's concurrent limit is hit → close the two OLDEST sessions
+        (making room) and create fresh again; reuse an existing browser only
+        as a last resort (a fresh TAB still isolates the run).
      3. The tab closes when the job settles; sessions WE created are then
-        DELETED via the API so nothing sits idle. */
+        DELETED via MCP so nothing sits idle. */
   function acquireManaged(key, log) {
-    /* limit → try the two oldest sessions first; the account caps at 5
-       concurrent, so 2 deletes ALWAYS make room — never give up. */
+    function fresh() {
+      return createSession(key).then(function (s) { s.__mine = true; return s; });
+    }
     function reclaimAndRetry() {
       if (log) log("concurrent limit — closing idle sessions to make room", "warn");
       return listSessions(key).then(function (list) {
-        if (list.length <= 1) throw new Error("kernel limit reached and nothing to reclaim");
-        var victims = list.slice(0, 2);
+        if (!list.length) throw new Error("kernel limit reached and nothing to reclaim");
+        var victims = list.slice(0, 2); /* oldest first — account caps at 5 */
         return Promise.all(victims.map(function (s) { return deleteSession(key, s.session_id); }))
-          .then(function () { return createSession(key); })
-          .then(function (s) { s.__mine = true; return s; });
+          .then(function () { return sleep(500); })
+          .then(fresh)
+          .catch(function () {
+            /* still capped → reuse the newest existing browser */
+            if (log) log("reclaim failed — reusing the newest browser for this run", "warn");
+            return listSessions(key).then(function (l2) {
+              if (!l2.length) throw new Error("kernel limit reached and no existing browser to reuse");
+              var s = l2[l2.length - 1];
+              s.__mine = false;
+              return s;
+            });
+          });
       });
     }
-    return createSession(key).then(function (s) { s.__mine = true; return s; }, function (e) {
-      if (e && e.limit) {
-        if (log) log("concurrent-browser limit reached — reusing the newest browser for this run", "warn");
-        return listSessions(key).then(function (list) {
-          if (!list.length) throw new Error("kernel limit reached and no existing browser to reuse");
-          var s = list[list.length - 1];
-          s.__mine = false;
-          return s;
-        });
-      }
+    return fresh().catch(function (e) {
+      if (e && (e.limit || e.status === 409 || e.status === 429)) return reclaimAndRetry();
       throw e;
     });
   }
@@ -285,33 +431,45 @@
     var started = Date.now();
     attempt = attempt || 1;
     return acquireManaged(key, log).then(function (session) {
-      currentLive = session.browser_live_view_url || currentLive;
-      if (onSession) { try { onSession(session); } catch (e) {} }
-      return openDriver({
-        base: session.base_url,
-        cdp: session.cdp_ws_url || "",
-        jwt: (session.cdp_ws_url || "").split("jwt=")[1] || "",
-        live: session.browser_live_view_url || "",
-        sid: session.session_id,
-      }).then(function (driver) {
-        var finishTab = function () {
-          return driver.close().then(function () {
-            if (session.__mine) return deleteSession(key, session.session_id);
-          });
-        };
-        return Promise.resolve().then(function () { return job(driver, log); }).then(
-          function (out) { return finishTab().then(function () { return out; }); },
-          function (err) { return finishTab().then(function () { throw err; }); }
-        );
-      })
-      /* a fresh session can briefly 404/race at the WS layer ("Session not
-         found") — ONE retry with a brand-new session, transparently */
-      .catch(function (err) {
-        if (attempt < 2 && session.__mine) {
-          if (log) log("browser session vanished (" + (err && err.message || "error") + ") — spinning up a new one", "warn");
-          return sleep(400).then(function () { return runManaged(job, log, onSession, attempt + 1); });
-        }
-        throw err;
+      /* create payloads sometimes omit the CDP/live URLs — fetch them */
+      var enrich = (session.cdp_ws_url && session.browser_live_view_url)
+        ? Promise.resolve(session)
+        : getSession(key, session.session_id).then(function (full) {
+            if (full && full.cdp_ws_url) session = full;
+            return session;
+          }).catch(function () { return session; });
+      return enrich.then(function (session) {
+        currentLive = session.browser_live_view_url || currentLive;
+        if (onSession) { try { onSession(session); } catch (e) {} }
+        return openDriver({
+          base: session.base_url,
+          cdp: session.cdp_ws_url || "",
+          jwt: (session.cdp_ws_url || "").split("jwt=")[1] || "",
+          live: session.browser_live_view_url || "",
+          sid: session.session_id,
+        }).then(function (driver) {
+          var finishTab = function () {
+            return driver.close().then(function () {
+              if (session.__mine) return deleteSession(key, session.session_id);
+            });
+          };
+          return Promise.resolve().then(function () { return job(driver, log); }).then(
+            function (out) { return finishTab().then(function () { return out; }); },
+            function (err) { return finishTab().then(function () { throw err; }); }
+          );
+        })
+        /* a fresh session can briefly 404/race at the WS layer ("Session not
+           found") — ONE retry with a brand-new session, transparently */
+        .catch(function (err) {
+          if (attempt < 2 && session.__mine) {
+            if (log) log("browser session vanished (" + (err && err.message || "error") + ") — spinning up a new one", "warn");
+            /* the vanished session may still be registered server-side — clean it up */
+            return deleteSession(key, session.session_id).then(function () {
+              return sleep(400).then(function () { return runManaged(job, log, onSession, attempt + 1); });
+            });
+          }
+          throw err;
+        });
       });
     }).then(function (out) {
       log("browser session closed (" + Math.round((Date.now() - started) / 1000) + "s)", "ok");
@@ -340,9 +498,9 @@
 
   NB.kernelAgent = {
     /* can the agent drive a cloud browser right now? */
-    available: function () { return "WebSocket" in window; },
+    available: function () { return "WebSocket" in window && typeof fetch !== "undefined"; },
 
-    /* Verify the Kernel REST endpoint actually answers for our key.
+    /* Verify the Kernel MCP endpoint actually answers for our key.
        Cached for 5 minutes so UI paths can call it freely. */
     ready: function () {
       if (TAB_REUSE || TEST_MODE) return Promise.resolve(true);
@@ -351,7 +509,7 @@
       var now = Date.now();
       if (readyPromise && now - readyAt < 300000) return readyPromise;
       readyAt = now;
-      readyPromise = listSessions(apiKey()).then(function () { return true; }).catch(function () {
+      readyPromise = mcpBrowsers({ action: "list" }).then(function () { return true; }).catch(function () {
         readyPromise = null; readyAt = 0;
         return false;
       });
@@ -416,6 +574,7 @@
   NB.setKernelKey = function (v) {
     try { if (v) localStorage.setItem(KEY_LS, String(v).trim()); else localStorage.removeItem(KEY_LS); } catch (e) {}
     readyPromise = null; readyAt = 0; /* re-probe with the new key */
+    mcpSession = ""; mcpReadyPromise = null; /* new key → new MCP handshake */
   };
   NB.getKernelRelay = function () { return lsGet(RELAY_LS); };
   NB.setKernelRelay = function (v) {
@@ -423,10 +582,10 @@
   };
   NB.kernelEnv = function () {
     var custom = !!lsGet(KEY_LS);
-    return { mode: NB.kernelMode(), key: custom ? "custom" : "built-in", relay: relayBase() };
+    return { mode: NB.kernelMode(), key: custom ? "custom" : "built-in", relay: relayBase(), transport: relayBase() ? "relay" : "mcp" };
   };
 
   /* tests */
   var readyPromise = null, readyAt = 0;
-  NB.__kernelInternals = { Cdp: Cdp, openDriver: openDriver, setTabReuse: function (v) { TAB_REUSE = v; }, API: API, MAX_TIMEOUT_S: MAX_TIMEOUT_S };
+  NB.__kernelInternals = { Cdp: Cdp, openDriver: openDriver, setTabReuse: function (v) { TAB_REUSE = v; }, API: API, MCP_URL: MCP_URL, MAX_TIMEOUT_S: MAX_TIMEOUT_S };
 })();

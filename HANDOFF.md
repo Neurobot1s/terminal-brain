@@ -4,7 +4,19 @@
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
 ## Current state (2026-09-18) — ALL GREEN
-All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 12 JS files syntax-clean (`node --check`). Kernel org left with **0 idle sessions** (verified via API). Nothing pending.
+All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 14 JS files syntax-clean (`node --check`). `tsc -b --noEmit` clean. Kernel org left with **0 idle sessions** (verified via MCP API). Nothing pending.
+
+## Hotfix — "Kernel still unavailable" → FIXED via MCP transport
+- **Root cause:** `kernel.js` created/listed/deleted sessions against `api.onkernel.com` REST, which sends **no CORS headers** (preflight 405, zero ACAO — re-verified). Browsers could never reach it from GitHub Pages → `kernelAgent.ready()` always failed → "kernel unreachable — falling back to in-site readers".
+- **Fix:** Kernel's **MCP server `https://mcp.onkernel.com/mcp` IS CORS-open** (`Access-Control-Allow-Origin: *` on `mcp.onkernel.com`, Vercel-hosted; exposes `mcp-session-id`). It accepts the same Bearer key. All session REST now goes through the MCP `manage_browsers` tool:
+  - `initialize` (lazy, shared `mcp-session-id`, stored from the response header) → `notifications/initialized` (202) → `tools/call manage_browsers {action: create|list|get|delete}`.
+  - Response bodies are SSE frames (`data: {...}`) whose `result.content[0].text` is JSON: `create`/`get` → `{"browser":{…}}`, `list` → `{"items":[…]}` (oldest-first), `delete` → plain text.
+  - Everything else is unchanged: fresh session per run, 72h max timeout, per-run CDP tab, tab closed + **session deleted on finish** (success, error, or vanish), limit-reclaim (close 2 oldest on concurrent-cap error, incl. HTTP 409/429), one vanish-retry with a brand-new session.
+  - `create` returns `cdp_ws_url` + `browser_live_view_url` (live-verified), so the driver + live iframe keep connecting directly (WebSockets/iframes have no CORS).
+- Live-verified end-to-end against the real API: initialize → create (`neurobot-*`, max timeout 259200) → get → delete → list = 0 sessions left. A stray probe session was deleted; org is clean.
+- Settings → Kernel Browser copy updated (no more "REST unreachable (CORS)" messaging); relay field still honored first if the user pastes one. `NB.kernelEnv()` now also reports `transport: "mcp"|"relay"`.
+- `tests/kernel.test.js` still passes untouched (TEST_MODE stubs the transport and exercises the CDP driver).
+- Note: the MCP session id can go stale server-side — `mcpBrowsers` auto-reinitializes once on 400/404. Key override in Settings resets the MCP handshake.
 
 ## Round 2 — micro-interactions + living data (styles.perf.css §14–15)
 - **Entrance choreography:** stat cards/panels cascade in with 30–40ms steps (`cardIn`, spring); graph nodes pop in staggered + radial halo behind the graph (`core-part2.js` renderGraph unchanged — CSS only).
@@ -22,8 +34,8 @@ All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `ag
 - **Responsive:** safe-area insets (topbar/view/sidebar/status bar), iOS bottom-sheet modals (≤640px, `92dvh` + `sheetUp` spring), crossfading scrim (opacity instead of display flip), desktop-only topbar vibrancy (`backdrop-filter` guarded to ≥861px), landscape-phone compaction, `overscroll-behavior: contain` on all scroll containers, webkit autofill dark-theme fix, 44px nav targets on mobile.
 - **main.js:** route change replays the `.route-in` animation (remove → reflow → add).
 
-## Kernel Browser — final state (read this before touching)
-- **REST create/list/delete is CORS-blocked from browsers. Verified exhaustively:** preflight returns 405 with zero ACAO headers from every origin; the POST itself *executes* but the browser can't read the response (no ACAO on it either). No allow-listing exists.
+## Kernel Browser — transport history (read this before touching)
+- **REST create/list/delete is CORS-blocked from browsers. Verified exhaustively:** preflight returns 405 with zero ACAO headers from every origin. No allow-listing exists. **This is why the MCP transport above exists — do not go back to REST.**
 - **All public CORS forwarders tested and dead:** corsproxy.io (401 paid), allorigins (timeout), thingproxy (dead), codetabs (timeout), whateverorigin (GET-only, 405 on POST), cors.lol (429), crossorigin.me (dead), r.jina.ai (timeout), cors-anywhere demo (403 needs opt-in), test.cors.workers.dev (429). **Do not ship an auto-fallback to public proxies — it cannot work.**
 - Therefore: browser CAN'T spin up sessions by itself. Two working paths:
   1. **Settings → Kernel Browser → relay field** + `kernel-relay.js` (Cloudflare Worker, 2-min deploy) → full fresh-session-per-run mode, auto-used by agentBrowse + Live voice.
