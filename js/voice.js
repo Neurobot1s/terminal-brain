@@ -412,39 +412,95 @@
 
   /* live recognition while the user talks — gives interim text + a
      final transcript used if NVIDIA ASR stays unreachable.
-     The final transcript is REBUILT from the results list on every
-     event instead of accumulated — accumulating is what makes the
-     same words print twice in browsers that re-deliver results. */
-  function browserListen(onPartial) {
+     Hardened after the "says listening but hears nothing" bug:
+     • every error code is SURFACED via onErr (they were swallowed before,
+       so a dead engine looked identical to a live one)
+     • Chrome silently ENDS recognition after silence/timeouts — we detect
+       onend and restart while the round is active, or every word after
+       the first pause was lost
+     • finals accumulate in a list and the transcript is REBUILT on every
+       event — accumulating raw strings is what made words print twice
+     • a fresh instance per round; a stale one from the previous round
+       could hold the audio channel and block the next (another silent
+       death that looked like "listening") */
+  function browserListen(onPartial, onErr) {
     var SR = Rec();
     if (!SR) return null;
-    var rec;
-    try { rec = new SR(); } catch (e) { return null; }
-    var finalText = "", failed = false;
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "en-US";
-    rec.onresult = function (e) {
-      var fin = "", interim = "";
-      for (var i = 0; i < e.results.length; i++) {
-        var r = e.results[i];
-        var t = (r && r[0] && r[0].transcript) || "";
-        if (r.isFinal) fin += t;
-        else interim += t;
+    var carry = [], interim = "", stopped = false, wantRunning = false;
+    var audioStarted = false, gotResult = false, rec = null, sessionFinal = "";
+    function rebuild() {
+      var fin = (carry.join(" ") + " " + sessionFinal).replace(/\s+/g, " ").trim();
+      if (onPartial) onPartial((fin + " " + interim).replace(/\s+/g, " ").trim());
+      return fin;
+    }
+    function spawn() {
+      if (stopped) return;
+      var r;
+      try { r = new SR(); } catch (e) { if (onErr) onErr("start-failed"); return; }
+      rec = r;
+      r.continuous = true;
+      r.interimResults = true;
+      r.lang = "en-US";
+      r.onaudiostart = function () { audioStarted = true; };
+      r.onspeechstart = function () { audioStarted = true; };
+      r.onresult = function (e) {
+        gotResult = true;
+        /* REBUILT from the results list on every event — Chrome re-delivers
+           results, and accumulating strings is what makes words print twice.
+           carry[] only gains text when an instance-run ENDS (see onend). */
+        var fin = "", int = "";
+        for (var i = 0; i < e.results.length; i++) {
+          var res = e.results[i];
+          var t = (res && res[0] && res[0].transcript) || "";
+          if (res.isFinal) fin += t + " ";
+          else int += t;
+        }
+        sessionFinal = fin.replace(/\s+/g, " ").trim();
+        interim = int;
+        rebuild();
+      };
+      r.onerror = function (e) {
+        var code = (e && e.error) || "unknown";
+        if (code === "no-speech" || code === "aborted") return; /* benign */
+        if (onErr) onErr(code);
+      };
+      r.onend = function () {
+        /* bank this instance-run's finals before restarting, so a Chrome
+           auto-restart (silence/60s cap) doesn't lose earlier words */
+        if (sessionFinal) { carry.push(sessionFinal); sessionFinal = ""; }
+        if (stopped || !wantRunning) return;
+        setTimeout(function () {
+          if (stopped || !wantRunning) return;
+          try { rec.start(); } catch (e2) {
+            setTimeout(function () {
+              if (!stopped && wantRunning) { try { rec.start(); } catch (e3) {} }
+            }, 500);
+          }
+        }, 150);
+      };
+      try { r.start(); wantRunning = true; } catch (e) {
+        wantRunning = false;
+        if (onErr) onErr("start-failed");
       }
-      finalText = fin.replace(/\s+/g, " ").trim();
-      if (onPartial) onPartial((finalText + " " + interim).replace(/\s+/g, " ").trim());
-    };
-    rec.onerror = function () { failed = true; };
-    try { rec.start(); } catch (e) { return null; }
+    }
+    spawn();
     return {
       stop: function () {
-        try { rec.stop(); } catch (e) {}
-        return failed ? "" : finalText;
+        stopped = true; wantRunning = false;
+        /* stop() (NOT abort) lets Chrome finalise the in-flight result;
+           abort as a safety net shortly after */
+        try { if (rec) rec.stop(); } catch (e) {}
+        setTimeout(function () { try { if (rec) rec.abort(); } catch (e) {} }, 400);
+        return rebuild();
       },
-      /* Chrome finalises the last result AFTER stop() — read this
-         a beat later for the late-arriving words */
-      getText: function () { return failed ? "" : finalText; },
+      getText: function () {
+        /* finals win; if Chrome never finalised (fast stop), the last
+           interim is the utterance — don't drop it */
+        var fin = rebuild();
+        return fin || String(interim || "").replace(/\s+/g, " ").trim();
+      },
+      audioStarted: function () { return audioStarted; },
+      gotAnyResult: function () { return gotResult; },
     };
   }
 
@@ -517,6 +573,14 @@
 
   /* ---------- diagnostics ---------- */
   var state = { audio: null };
+
+  /* STRICT browser intent — only explicit asks wake the cloud browser.
+     Casual questions (“what's the weather like in general conversation”)
+     stay on the normal memory/knowledge AI path. */
+  function wantsBrowser(q) {
+    var s = String(q || "").toLowerCase();
+    return /(\buse (the )?browser\b)|((\bopen|launch|start|spin up)\b[^.?!]{0,24}\bbrowser\b)|(\bbrowse the (web|internet)\b)|(\bsearch the (web|internet)\b)|(\bweb search\b)|(\bgo online\b)|(\buse the internet\b)|(\blook (it |that )?up online\b)|(\bsearch (it |that )?online\b)|((\bgoogle|search|look up|browse|open|go to|visit)\b[^.?!]{0,40}\.(com|org|net|io|dev|ai|sh|co|me)\b)|(\bhttps?:\/\/)/.test(s);
+  }
 
   NB.voiceEngines = function () {
     var m = routeMemory();
@@ -632,12 +696,86 @@
     var micStream = null, recorder = null, chunks = [], analyser = null, audioCtx = null;
     var rafId = null, capTimer = null, noSpeechTimer = null, spokeAt = 0, quietSince = 0, sessionStart = 0;
     var lastSrActivity = 0; /* last time the recogniser delivered anything */
+    var srEverAlive = false; /* did the speech engine actually produce anything this round? */
     var listening = false, handsFree = false, busy = false, closed = false;
     var recognizer = null, browserFinal = "", turns = [];
     var latestPartial = "";
     var said = {};            /* global dedupe: one utterance → one bubble, ever */
     var lastSpokeText = "";   /* what NeuroBot last said out loud (echo guard) */
     var liveChat = [];        /* conversation memory for follow-ups */
+    var browseCount = 0;      /* background cloud-browser runs this session */
+    var paneOpen = false;
+
+    /* ---------- split pane (desktop): watch the cloud browser live ---------- */
+    function isPhone() {
+      try { return window.matchMedia("(max-width: 760px)").matches; } catch (e) { return false; }
+    }
+    function liveUrl() {
+      return NB.kernelLiveUrl ? (NB.kernelLiveUrl() || "") : "";
+    }
+    function openPane() {
+      if (paneOpen || isPhone() || !liveUrl()) return;
+      var stage = modal.body.querySelector(".live");
+      if (!stage || stage.querySelector(".live-pane")) return;
+      paneOpen = true;
+      var pane = document.createElement("div");
+      pane.className = "live-pane";
+      pane.id = "live-pane";
+      pane.innerHTML =
+        '<div class="live-pane-head"><span class="live-pane-dot"></span><span>neurobot · cloud browser</span>' +
+        '<button type="button" class="live-pane-close" title="Hide browser pane">×</button></div>' +
+        '<iframe class="live-pane-frame" src="' + esc(liveUrl()) + '" allow="clipboard-read; clipboard-write" allowfullscreen></iframe>' +
+        '<div class="live-pane-foot">watching the kernel browser — the agent works while you keep talking</div>';
+      stage.insertBefore(pane, stage.firstChild);
+      stage.classList.add("split");
+      pane.querySelector(".live-pane-close").addEventListener("click", function () {
+        pane.remove(); stage.classList.remove("split"); paneOpen = false;
+      });
+    }
+    function closePane() {
+      var pane = modal.body.querySelector("#live-pane");
+      if (pane) pane.remove();
+      var stage = modal.body.querySelector(".live");
+      if (stage) stage.classList.remove("split");
+      paneOpen = false;
+    }
+
+    /* ---------- background browser run (the conversation continues) ----------
+     Fires when the user STRICTLY asks to use the browser in Live.
+     Voice stays live; the agent works on the cloud browser meanwhile.
+     Desktop gets a watchable split pane; phones run it in background. */
+    function runBrowserTask(q) {
+      browseCount++;
+      if (!liveUrl()) {
+        /* no embedded live view available — fall back to the watchable panel */
+        bubble("ai", "Opening the watchable browser panel… 🌐");
+        if (NB.agentBrowse) NB.agentBrowse(q);
+        return;
+      }
+      if (!isPhone()) openPane();
+      var tag = browseCount > 1 ? " (task " + browseCount + ")" : "";
+      bubble("ai", "Cloud browser spinning up — “" + q + "”. " +
+        (isPhone() ? "Working in the background while we keep talking." : "Watch it on the right while we keep talking."));
+      NB.kernelAgent.run(function (d) {
+        return d.goto("https://duckduckgo.com/?q=" + encodeURIComponent(q)).then(function () { return sleep(1200); })
+          .then(function () { return d.text("#links"); })
+          .then(function (t) {
+            t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 900);
+            if (!t) throw new Error("no results readable");
+            return t;
+          });
+      }, function (m, tone) {
+        if (tone === "ok") bubble("ai", "🌐 " + m);
+      }).then(function (results) {
+        var summary = results ? results.slice(0, 260) : "I opened the results in the cloud browser.";
+        bubble("ai", "Done — here's what I found: " + summary);
+        pushTurn("neurobot", "[browser] " + summary);
+        speak("Done. " + summary);
+      }).catch(function (e) {
+        bubble("ai", "Browser task hit a snag: " + (e.message || "unknown error") + ". Ask me anything else meanwhile.");
+        if (isPhone()) bubble("ai", "Tip: say \"use the browser\" again to retry.");
+      });
+    }
 
     function esc(s) { return NB.esc(s); }
 
@@ -754,13 +892,37 @@
           browserFinal = "";
           latestPartial = "";
           lastSrActivity = 0;
+          srEverAlive = false;
+          /* kill any stale recognizer from a previous round first —
+             it can hold the audio channel and silently block this one */
+          if (recognizer) { try { recognizer.stop(); } catch (e) {} recognizer = null; }
           recognizer = browserListen(function (partial) {
             /* any recogniser event counts as “heard something” — even a
                bare interim — so quiet mics still get the pause countdown */
             lastSrActivity = Date.now();
             latestPartial = partial || "";
             if (partial) setStatus(partial, "live");
+          }, function (code) {
+            /* surface what used to be swallowed */
+            if (code === "not-allowed" || code === "service-not-allowed") {
+              setStatus("Mic blocked for speech recognition — allow the microphone, then reload.", "err");
+            } else if (code === "audio-capture") {
+              setStatus("Speech engine can't reach the mic — recording anyway.", "warn");
+            } else if (code === "network") {
+              setStatus("Speech service unreachable — recording; will transcribe after.", "warn");
+            }
           });
+          if (recognizer) {
+            /* confirm the engine REALLY came up — audio actually flowing */
+            setTimeout(function () {
+              if (closed || !recognizer) return;
+              if (!recognizer.audioStarted() && !recognizer.gotAnyResult()) {
+                setStatus("Speech engine is quiet — if nothing is heard, try Chrome or Edge.", "warn");
+              }
+            }, 4500);
+          } else {
+            setStatus("Speech recognition unavailable — recording; will transcribe after.", "warn");
+          }
 
           /* if the mic AND the recogniser both heard nothing for a while,
              end the round instead of sitting on the 60s hard cap */
@@ -879,6 +1041,17 @@
 
     /* ---------- thinking + speaking ---------- */
     function ask(question) {
+      /* strict browser intent → cloud browser runs in the BACKGROUND;
+         the voice conversation keeps going. Voice commands stay off the AI path. */
+      if (NB.kernelMode && NB.kernelMode() !== "off" && wantsBrowser(question)) {
+        bubble("ai", "On it — spinning up the cloud browser. Keep talking, I'm still here. 🌐");
+        runBrowserTask(question);
+        busy = false;
+        setMode("idle");
+        setStatus(handsFree ? "Browser is working — keep talking" : "Tap the orb — I'm still listening", "live");
+        if (handsFree) setTimeout(function () { if (!closed && !busy) startListening(); }, 600);
+        return;
+      }
       setMode("thinking");
       setStatus("Thinking with your memories…");
       var pending = bubble("ai", "…");

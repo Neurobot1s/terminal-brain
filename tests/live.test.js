@@ -71,16 +71,24 @@ window.webkitAudioContext = FakeAudioCtx;
    NEXT_TRANSCRIPT is mutable so tests can script later rounds. */
 let NEXT_TRANSCRIPT = "what are my ai goals";
 class FakeSR {
-  start() { if (this.onstart) this.onstart(); }
-  stop() {
-    if (!this.onresult) return;
-    const fire = () => this.onresult({
-      resultIndex: 0,
-      results: [[{ transcript: NEXT_TRANSCRIPT }]].map((r) => Object.assign(r, { isFinal: true })),
-    });
-    fire();
-    fire();
+  constructor() { this.continuous = false; this.interimResults = false; this.lang = ""; }
+  start() {
+    if (this.onstart) this.onstart();
+    if (this.onaudiostart) this.onaudiostart();
   }
+  stop() {
+    /* chrome: final results are delivered just after stop() */
+    setTimeout(() => {
+      if (!this.onresult) return;
+      const fire = () => this.onresult({
+        resultIndex: 0,
+        results: [[{ transcript: NEXT_TRANSCRIPT }]].map((r) => Object.assign(r, { isFinal: true })),
+      });
+      fire(); fire(); /* re-delivers the SAME result twice (what Chrome does) */
+      if (this.onend) this.onend();
+    }, 10);
+  }
+  abort() { if (this.onend) setTimeout(() => this.onend(), 5); }
 }
 window.SpeechRecognition = FakeSR;
 

@@ -1,10 +1,13 @@
 /* ============================================================
    NeuroBot — agent-browse.js
    "agentBrowse" — a watchable web-browsing agent, in-site.
-   The agent fetches REAL web pages (Wikipedia REST + direct URLs),
-   reasons with the local NVIDIA model, follows links, extracts
-   answers — and streams every step to a browser panel the user
-   watches in real time. Triggered by a button in the AI chat.
+   Mode 1 (Kernel): the agent drives a REAL cloud Chromium
+   (kernel.sh) — real pages, real tabs — while you watch the
+   live view embedded in the panel. Fresh tab per run, tab
+   closed when the run ends.
+   Mode 2 (classic): CORS-open fetch readers (Wikipedia +
+   r.jina.ai), rendered as a reader panel — works with zero
+   infrastructure, kept as automatic fallback.
    ============================================================ */
 (function () {
   "use strict";
@@ -75,13 +78,27 @@
   var running = false;
 
   function panelHTML() {
-    return '<div class="ab-wrap">' +
+    /* Kernel mode embeds the REAL live view of the cloud browser */
+    var kernelOn = NB.kernelMode && NB.kernelMode() !== "off";
+    var live = kernelOn && NB.kernelLiveUrl ? NB.kernelLiveUrl() : "";
+    return '<div class="ab-wrap kernel">' +
       '<div class="ab-head"><span class="ab-dot"></span>' +
         '<span class="ab-title">agentBrowse</span>' +
+        '<span class="ab-mode" id="ab-mode">' + (kernelOn ? "☁ kernel" : "reader") + "</span>" +
         '<span class="ab-status" id="ab-status">idle</span>' +
         '<button class="btn btn-outline btn-sm" id="ab-close">Close</button>' +
       "</div>" +
-      '<div class="ab-viewport" id="ab-viewport"></div>' +
+      (live
+        ? '<div class="ab-viewwrap" id="ab-viewwrap">' +
+            '<iframe id="ab-live" class="ab-live" src="' + esc(live) + '" allow="clipboard-read; clipboard-write" allowfullscreen></iframe>' +
+            '<div class="ab-reconnect" id="ab-reconnect" hidden>' +
+              '<div class="ab-reconnect-box">' +
+                '<p>The cloud browser went to sleep — it closes itself when idle.</p>' +
+                '<button class="btn btn-primary btn-sm" id="ab-reconnect-btn">Reconnect</button>' +
+              "</div>" +
+            "</div>" +
+          "</div>"
+        : "") +
       '<div class="ab-log" id="ab-log"></div>' +
       '<div class="ab-foot" id="ab-foot"></div>' +
       "</div>";
@@ -105,11 +122,18 @@
     };
   }
 
-  /* Render a fake "browser screen" for one step. */
+  /* Render a reader page (classic mode — creates its viewport on demand). */
   function showPage(p, opts) {
     opts = opts || {};
     var v = document.querySelector("#ab-viewport");
-    if (!v) return;
+    if (!v) {
+      var panel = document.querySelector("#ab-panel");
+      if (!panel) return;
+      v = document.createElement("div");
+      v.className = "ab-viewport";
+      v.id = "ab-viewport";
+      panel.insertBefore(v, panel.querySelector("#ab-log"));
+    }
     var url = opts.url || ("https://en.wikipedia.org/wiki/" + encodeURIComponent(String(p.title || "").replace(/ /g, "_")));
     var body = String(p.body != null ? p.body : p.summary || "").slice(0, 600);
     v.innerHTML =
@@ -141,7 +165,84 @@
   /* ---------- the agent loop ---------- */
   var MAX_STEPS = 7;
 
-  function run(query, panel) {
+  /* ===== Kernel mode: the agent drives a REAL cloud browser =====
+     ONE fresh tab per run; the tab is closed the moment the run ends. */
+  function runKernel(query, panel) {
+    var steps = [];
+    function step(n, d) {
+      if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
+      status("step " + n + "/" + MAX_STEPS);
+      foot("thinking with your local NVIDIA model…");
+      return think(
+        "You are agentBrowse, an autonomous web-research agent inside NeuroBot. " +
+        "ALWAYS reply in English. " +
+        "You drive a real cloud web browser step by step to answer the user's question.\n" +
+        "Reply with EXACTLY one line, in one of these formats (choose the single most useful next step):\n" +
+        "NEXT SEARCH mount everest height\n" +
+        "NEXT OPEN https://en.wikipedia.org/wiki/Mount_Everest\n" +
+        "NEXT READ https://en.wikipedia.org/wiki/Mount_Everest\n" +
+        "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
+        "SEARCH = google-like search, OPEN = navigate, READ = grab the page text, ANSWER = stop and answer. " +
+        "Start with SEARCH if no pages have been opened yet. Use ANSWER as soon as the steps so far let you answer. No other text.",
+        "QUESTION: " + query +
+        "\n\nSTEPS SO FAR:\n" + (steps.length ? steps.join("\n") : "(none yet)"),
+        220
+      ).then(function (raw) {
+        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|ANSWER)\s*:?\s*([\s\S]+)$/i);
+        if (!m) { log("unclear model step — stopping", "err"); status("error"); return; }
+        var action = m[1].toUpperCase(), arg = m[2].trim();
+        if (action === "ANSWER") {
+          log("ANSWER: " + arg, "ok");
+          status("done");
+          foot("");
+          return { answer: arg };
+        }
+        if (action === "SEARCH") {
+          log("searching the web for “" + arg + "”", "act");
+          foot("cloud browser → search");
+          return d.goto("https://duckduckgo.com/?q=" + encodeURIComponent(arg)).then(function () {
+            return sleep(800);
+          }).then(function () { return d.text("#links"); }).then(function (t) {
+            t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 1200);
+            if (!t) throw new Error("empty results");
+            steps.push("SEARCH “" + arg + "” → " + t.slice(0, 150));
+            return sleep(700).then(function () { return step(n + 1, d); });
+          }).catch(function (e) {
+            log("search failed (" + (e.message || "error") + ") — trying direct step", "err");
+            return sleep(400).then(function () { return step(n + 1, d); });
+          });
+        }
+        if (action === "OPEN" || action === "READ") {
+          var url = /^(https?:)?\/\//.test(arg) ? arg : "https://" + arg.replace(/^\/+/, "");
+          log("opening " + url, "act");
+          foot("cloud browser → " + url.replace(/^https?:\/\//, "").slice(0, 40));
+          return d.goto(url).then(function () { return sleep(600); })
+            .then(function () { return d.text("body"); })
+            .then(function (t) {
+              t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 1500);
+              if (!t) throw new Error("empty page");
+              steps.push((action === "OPEN" ? "OPEN " : "READ ") + url + " → " + t.slice(0, 150));
+              return sleep(700).then(function () { return step(n + 1, d); });
+            })
+            .catch(function (e) {
+              log("could not open that page (" + (e.message || "error") + ")", "err");
+              return step(n + 1, d);
+            });
+        }
+      }).catch(function (e) {
+        log("agent error: " + (e.message || "unknown"), "err");
+        status("error");
+      });
+    }
+    log("kernel agent online — driving a real cloud browser", "");
+    /* the whole loop runs inside ONE run: tab opens now, closes when done */
+    return NB.kernelAgent.run(function (d, klog) {
+      return d.goto("about:blank").then(function () { return step(1, d); });
+    }, function (m, tone) { if (tone !== "ok") log(m, tone); });
+  }
+
+  /* ===== Classic mode: CORS-open readers, no cloud browser ===== */
+  function runClassic(query, panel) {
     var visited = [], lastAnswer = "", linksSeen = [];
     function step(n) {
       if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
@@ -222,7 +323,8 @@
 
   /* ---------- public surface ---------- */
 
-  /* Watchable run: opens the panel, streams steps. */
+  /* Watchable run: opens the panel, streams steps.
+     Kernel mode first (real cloud browser); classic readers as fallback. */
   NB.agentBrowse = function (query) {
     var q = String(query || "").trim();
     if (!q) { NB.toast("Give the agent something to research.", "warn"); return; }
@@ -231,10 +333,22 @@
     var panel = openPanel();
     log("agent online — watching it work in real time", "");
     status("starting");
-    run(q, panel).then(function () {
+    var kernelOn = NB.kernelMode && NB.kernelMode() !== "off" && NB.kernelAgent.available();
+    var job = kernelOn ? runKernel(q, panel) : runClassic(q, panel);
+    Promise.resolve(job).then(function (out) {
       running = false;
-      if (document.querySelector("#ab-panel")) status(document.querySelector("#ab-status").textContent === "error" ? "error" : "done");
-    });
+      var el = document.querySelector("#ab-panel");
+      if (el && out && out.answer) {
+        var v = el.querySelector("#ab-viewport") || el.querySelector(".ab-viewwrap");
+        if (v) {
+          var ans = document.createElement("div");
+          ans.className = "ab-answer";
+          ans.innerHTML = '<span class="ab-answer-label">agent answer</span>' + esc(out.answer);
+          el.insertBefore(ans, el.querySelector("#ab-log"));
+        }
+        status("done");
+      }
+    }).catch(function () { running = false; });
   };
 
   /* Quiet variant for the ask flow: no panel, returns the final answer text
