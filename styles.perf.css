@@ -284,3 +284,65 @@ textarea:focus-visible, [tabindex]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .live-orb, .live-ring, .live-core, .live-meter i { animation: none !important; }
 }
+
+/* ── 7. UI polish round (live modal + dashboard) ── */
+.live-empty-chips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 12px; }
+.live-empty-chips button {
+  font: inherit; font-size: 11.5px; color: var(--muted); cursor: pointer;
+  padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border-2);
+  background: var(--panel); transition: all .16s var(--ease);
+}
+.live-empty-chips button:hover {
+  color: var(--text); border-color: rgba(124,156,255,.5);
+  background: rgba(124,156,255,.1); transform: translateY(-1px);
+}
+
+/* orb: soft outer aura that breathes in idle */
+.live-orb::after {
+  content: ""; position: absolute; inset: -14px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,156,255,.14), transparent 68%);
+  pointer-events: none; opacity: .7; animation: liveAura 3.2s ease-in-out infinite;
+}
+.live-orb.listening::after { background: radial-gradient(circle, rgba(248,113,113,.16), transparent 68%); }
+.live-orb.speaking::after { background: radial-gradient(circle, rgba(74,222,128,.15), transparent 68%); }
+@keyframes liveAura { 0%, 100% { transform: scale(.94); opacity: .5; } 50% { transform: scale(1.06); opacity: .85; } }
+
+/* status pill: live dot that matches the tone */
+.live-status::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--faint); margin-right: 7px; vertical-align: 1px; transition: background .2s;
+}
+.live-status.live::before { background: #fda4af; animation: pulse 1.2s infinite; }
+.live-status.warn::before { background: var(--warn); }
+.live-status.err::before { background: var(--bad); }
+
+.live-thread { scrollbar-width: thin; }
+.live-thread::-webkit-scrollbar { width: 6px; }
+.live-thread::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); }
+
+/* dashboard ask box: premium glow + micro-interactions */
+.ask-box { transition: transform .18s var(--ease), box-shadow .22s var(--ease), border-color .22s var(--ease); }
+.ask-box:hover { transform: translateY(-1px); border-color: rgba(124,156,255,.34); }
+.ask-box:focus-within {
+  border-color: rgba(124,156,255,.55);
+  box-shadow: 0 0 0 3px rgba(124,156,255,.16), 0 18px 44px -22px rgba(124,156,255,.5);
+}
+.ask-mic, .ask-send {
+  transition: all .16s var(--ease); border-radius: 9px;
+}
+.ask-mic:hover { background: rgba(248,113,113,.12); transform: scale(1.08); }
+.ask-send:hover { background: rgba(124,156,255,.2); transform: scale(1.08); }
+.ask-send:active { transform: scale(.94); }
+
+/* stat cards: accent rail slides in on hover */
+.stat-card { position: relative; overflow: hidden; }
+.stat-card::after {
+  content: ""; position: absolute; left: 0; right: 100%; bottom: 0; height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: right .28s var(--ease);
+}
+.stat-card:hover::after { right: 0; }
+
+/* sidebar links: icon nudges forward on hover */
+.nav a .nav-ico, .nav a::before { display: inline-block; transition: transform .16s var(--ease); }
+.nav a:hover::before { transform: translateX(2px); }

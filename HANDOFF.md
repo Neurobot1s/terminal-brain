@@ -6,7 +6,13 @@
 ## Current state (2026-09-17) — ALL GREEN
 All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 checks), `ai`. 23/23 E2E at the production origin (jsdom harness `/tmp/nb-e2e.js` — temp, not in repo). All 12 JS files syntax-clean. Nothing pending.
 
-## Latest round (evening)
+## Latest round (night)
+- **Device TTS rebuilt** (voice.js `browserSpeak`): 120ms settle after `cancel()` (Chrome drops the next utterance otherwise — the silent-answer bug), voice picking (best en voice by name), 180-char chunking with queued playback, per-chunk watchdog for lost `onend`, global `speakToken` so Stop/cancel kills queued chunks.
+- **Voice-catch fixes**: echo guard narrowed — only filters when the utterance is a strong prefix (>18 chars) or long fragment (>30) of NeuroBot's last answer, so short replies ("nice", "cool") always pass; repeat guard now 90s windowed + exempt for <6-char words; VAD "speaking" also counts recent SR activity (quiet mics get the countdown); 7s no-speech round bail-out; starter chips ("summarize my notes" etc.) ask without the mic.
+- **UI polish** (styles.perf.css §7): orb aura animation, status-pill dot, starter chips, ask-box focus glow + hover lift, stat-card accent rail, sidebar icon nudge.
+- NVIDIA speech re-probed: functions ACTIVE on NVCF but pexec still 404s (gRPC-only) — device engines remain the active path.
+
+## Previous round (evening)
 - **AI prompt**: two-step scan — answer from memories first; if not covered, answer from general knowledge and NEVER say "no relevant memory". Verified live (Japan-PM question answered from GK against an unrelated brain).
 - **Voice double-print fixed at 3 levels**: echo guard (drops mic pickup of NeuroBot's own TTS via `lastSpokeText`), session-wide repeat dedupe (`said{}` map), instant bail on NVIDIA's deterministic speech 404/500 (no more chain-limbo window). TTS status now says "Speaking with your device voice…" (no "busy").
 - **Terminal agent commands** (terminal.js): `new <kind> [title]` instant capture (no modal), `rm <kind> <n>`, `pin <kind> <n>`, `idea <n> <status>`, `goal <n> <pct>`, plus existing `ls/find/cd/ask/export/theme`. One duplicate `export` entry was created and removed during this edit — final file has exactly one `export:` (line ~357) and passes syntax + all suites.

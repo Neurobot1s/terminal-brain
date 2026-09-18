@@ -448,19 +448,69 @@
     };
   }
 
+  /* Device TTS — hardened, because this is what speaks every answer:
+     1. cancel() then settle a beat (Chrome drops the NEXT utterance if you
+        speak immediately after cancel — the classic silent-answer bug)
+     2. pick a decent en voice when the browser has one loaded
+     3. speak long text in chunks (Chrome caps/limits single utterances)
+     4. per-chunk watchdog: Chrome sometimes loses onend entirely (the
+        utterance finishes audibly but the event never fires) — the guard
+        advances anyway so the UI can never hang in "speaking" */
+  var speakToken = 0;
   function browserSpeak(text, onEnd) {
-    if (!hasBrowserTTS()) { if (onEnd) onEnd(); return false; }
+    if (!hasBrowserTTS() || !text) { if (onEnd) onEnd(); return false; }
+    var token = ++speakToken;
+    function cancelled() { return token !== speakToken; }
     try { window.speechSynthesis.cancel(); } catch (e) {}
-    var u = new window.SpeechSynthesisUtterance(text);
-    u.rate = 1.02;
-    u.pitch = 1;
-    u.onend = function () { if (onEnd) onEnd(); };
-    u.onerror = function () { if (onEnd) onEnd(); };
-    try { window.speechSynthesis.speak(u); } catch (e) { if (onEnd) onEnd(); }
+    function pickVoice() {
+      try {
+        var vs = window.speechSynthesis.getVoices ? (window.speechSynthesis.getVoices() || []) : [];
+        if (!vs.length) return null;
+        var en = vs.filter(function (v) { return /^en/i.test(v.lang || ""); });
+        var pool = en.length ? en : vs;
+        var nice = pool.filter(function (v) { return /samantha|karen|zira|aria|jenny|google (us|uk)/i.test(v.name || ""); });
+        return (nice[0] || pool[0]) || null;
+      } catch (e) { return null; }
+    }
+    function chunks(s) {
+      var words = String(s).replace(/\s+/g, " ").trim().split(" ");
+      var out = [], cur = "";
+      for (var i = 0; i < words.length; i++) {
+        if ((cur + " " + words[i]).trim().length > 180) { out.push(cur.trim()); cur = words[i]; }
+        else cur += " " + words[i];
+      }
+      if (cur.trim()) out.push(cur.trim());
+      return out;
+    }
+    function speakParts(voice) {
+      if (cancelled()) return;
+      var parts = chunks(text);
+      if (!parts.length) { if (onEnd) onEnd(); return; }
+      var idx = 0, finished = false;
+      function finish() { if (!finished) { finished = true; if (onEnd) onEnd(); } }
+      function next() {
+        if (cancelled() || finished) return;
+        if (idx >= parts.length) { finish(); return; }
+        var part = parts[idx++];
+        var u = new window.SpeechSynthesisUtterance(part);
+        if (voice) { try { u.voice = voice; } catch (e) {} }
+        u.rate = 1.02; u.pitch = 1; u.volume = 1;
+        /* generous stall guard — only trips when onend is truly lost */
+        var guard = setTimeout(next, Math.max(6000, part.length * 220));
+        u.onend = function () { clearTimeout(guard); setTimeout(next, 0); };
+        u.onerror = function () { clearTimeout(guard); setTimeout(next, 0); };
+        try { window.speechSynthesis.speak(u); } catch (e) { clearTimeout(guard); setTimeout(next, 0); }
+      }
+      next();
+    }
+    /* let cancel() settle before speaking, then go (voices load async on
+       Chrome but a missing one is fine — the default voice still speaks) */
+    setTimeout(function () { if (!cancelled()) speakParts(pickVoice()); }, 120);
     return true;
   }
 
   function stopSpeaking() {
+    speakToken++; /* kill queued chunks + watchdogs from any running speak */
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     if (state.audio) { try { state.audio.pause(); } catch (e) {} state.audio = null; }
   }
@@ -549,7 +599,13 @@
         "</div>" +
         '<div class="live-thread" id="live-thread">' +
           '<div class="live-empty" id="live-empty">Your conversation appears here. NeuroBot answers with your own ' +
-          NB.totalItems() + " memories as context — and speaks out loud.</div>" +
+          NB.totalItems() + " memories as context — and speaks out loud." +
+            '<div class="live-empty-chips" id="live-chips">' +
+              ["summarize my notes", "what are my goals", "ideas i should build next", "quiz me on my knowledge"]
+                .map(function (q) { return '<button type="button" data-ask="' + esc(q) + '">' + esc(q) + "</button>"; })
+                .join("") +
+            "</div>" +
+          "</div>" +
         "</div>" +
         '<div class="live-controls">' +
           '<button class="btn btn-primary btn-sm" id="live-talk">Start talking</button>' +
@@ -574,7 +630,8 @@
     var foot = modal.body.querySelector("#live-foot");
 
     var micStream = null, recorder = null, chunks = [], analyser = null, audioCtx = null;
-    var rafId = null, capTimer = null, spokeAt = 0, quietSince = 0, sessionStart = 0;
+    var rafId = null, capTimer = null, noSpeechTimer = null, spokeAt = 0, quietSince = 0, sessionStart = 0;
+    var lastSrActivity = 0; /* last time the recogniser delivered anything */
     var listening = false, handsFree = false, busy = false, closed = false;
     var recognizer = null, browserFinal = "", turns = [];
     var latestPartial = "";
@@ -633,7 +690,9 @@
         var rms = Math.sqrt(sum / buf.length);
         orb.style.setProperty("--level", Math.min(1, rms * 4.5).toFixed(3));
         var now = Date.now();
-        if (rms > QUIET_RMS) {
+        /* “speaking” = the mic is loud OR the recogniser is streaming text
+           right now — so quiet mics still get the 5s pause countdown */
+        if (rms > QUIET_RMS || (lastSrActivity && now - lastSrActivity < 300)) {
           spokeAt = now;
           quietSince = 0;
         } else if (spokeAt && !quietSince) {
@@ -655,6 +714,7 @@
     function stopMeter() {
       if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
       if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+      if (noSpeechTimer) { clearTimeout(noSpeechTimer); noSpeechTimer = null; }
       orb.style.removeProperty("--level");
     }
 
@@ -692,10 +752,21 @@
 
           browserFinal = "";
           latestPartial = "";
+          lastSrActivity = 0;
           recognizer = browserListen(function (partial) {
+            /* any recogniser event counts as “heard something” — even a
+               bare interim — so quiet mics still get the pause countdown */
+            lastSrActivity = Date.now();
             latestPartial = partial || "";
             if (partial) setStatus(partial, "live");
           });
+
+          /* if the mic AND the recogniser both heard nothing for a while,
+             end the round instead of sitting on the 60s hard cap */
+          if (noSpeechTimer) clearTimeout(noSpeechTimer);
+          noSpeechTimer = setTimeout(function () {
+            if (listening && !spokeAt && (!lastSrActivity || Date.now() - lastSrActivity > 4000)) stopListening();
+          }, 7000);
 
           listening = true;
           spokeAt = 0; quietSince = 0; sessionStart = Date.now();
@@ -779,18 +850,26 @@
            own last line, repeats of anything already sent this session,
            and empty/duplicate results from either engine. */
         var text = String(got.text || "").replace(/\s+/g, " ").trim();
-        var key = text.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
-        var echoed = lastSpokeText && key && (lastSpokeText.indexOf(key) !== -1 || key.indexOf(lastSpokeText) !== -1);
-        if (!text || echoed || said[key]) {
+        var key = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+        /* echo guard — ONLY catches the mic picking up NeuroBot's own last
+           line: the utterance must be a strong prefix of the answer (>18
+           chars) or a long fragment of it (>30 chars). Short replies like
+           "nice" or "cool" after an answer mentioning them pass freely. */
+        var inLast = !!(lastSpokeText && key && lastSpokeText.indexOf(key) !== -1);
+        var echoed = !!(inLast && (lastSpokeText.indexOf(key) === 0 ? key.length > 18 : key.length > 30));
+        /* repeat guard — 90s window, and never for short natural replies */
+        var REPEAT_WIN = 90 * 1000;
+        var isRepeat = !!(said[key] && Date.now() - said[key] < REPEAT_WIN);
+        if (!text || echoed || (isRepeat && key.length >= 6)) {
           busy = false;
           setMode("idle");
           if (echoed) setStatus("(echo filtered — that was NeuroBot speaking)", "warn");
-          else if (said[key]) setStatus("(repeat filtered — already answered that)", "warn");
+          else if (isRepeat && key.length >= 6) setStatus("(repeat filtered — just answered that)", "warn");
           else setStatus("Couldn't hear that — tap the orb and try again.", "warn");
           if (handsFree) setTimeout(function () { if (!closed && !busy) startListening(); }, 900);
           return;
         }
-        said[key] = true;
+        said[key] = Date.now();
         bubble("user", text);
         pushTurn("you", text);
         ask(text);
@@ -874,6 +953,22 @@
       talkBtn.textContent = handsFree ? "Interrupt" : "Start talking";
       if (handsFree && !listening && !busy) startListening();
       if (!handsFree) setStatus("Hands-free off");
+    });
+
+    /* starter chips — tap one to ask without talking */
+    thread.addEventListener("click", function (e) {
+      var b = e.target && e.target.closest ? e.target.closest("[data-ask]") : null;
+      if (!b || busy || closed || listening) return;
+      var q = (b.getAttribute("data-ask") || "").trim();
+      if (!q) return;
+      var chips = thread.querySelector(".live-empty-chips");
+      if (chips) chips.remove();
+      if (empty && empty.parentNode) empty.remove();
+      var key = q.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      said[key] = Date.now();
+      bubble("user", q);
+      pushTurn("you", q);
+      ask(q);
     });
 
     stopBtn.addEventListener("click", function () {

@@ -67,14 +67,16 @@ window.AudioContext = FakeAudioCtx;
 window.webkitAudioContext = FakeAudioCtx;
 
 /* browser speech recognition stub — re-delivers the SAME result twice
-   (what Chrome does) to prove the transcript can't print double */
+   (what Chrome does) to prove the transcript can't print double.
+   NEXT_TRANSCRIPT is mutable so tests can script later rounds. */
+let NEXT_TRANSCRIPT = "what are my ai goals";
 class FakeSR {
   start() { if (this.onstart) this.onstart(); }
   stop() {
     if (!this.onresult) return;
     const fire = () => this.onresult({
       resultIndex: 0,
-      results: [[{ transcript: "what are my ai goals" }]].map((r) => Object.assign(r, { isFinal: true })),
+      results: [[{ transcript: NEXT_TRANSCRIPT }]].map((r) => Object.assign(r, { isFinal: true })),
     });
     fire();
     fire();
@@ -152,6 +154,14 @@ function check(label, fn) {
   check("no 'coming soon' copy left", () => !/coming soon/i.test(document.querySelector("#modal-root").textContent));
   check("orb starts idle", () => /idle/.test($("#live-orb").className));
 
+  /* ── starter chips ── */
+  check("starter chips rendered", () => document.querySelectorAll("#live-chips [data-ask]").length >= 3);
+  NB.askAI = (q) => { NB.__chip = q; return Promise.resolve("Chip answer."); };
+  document.querySelector("#live-chips [data-ask]").click();
+  await sleep(60);
+  check("starter chip asks without the mic", () => NB.__chip === "summarize my notes");
+  await sleep(400);
+
   /* ── full round trip: listen → transcribe → answer → speak ── */
   const realAsk = NB.askAI;
   NB.askAI = (q) => { NB.__asked = q; return Promise.resolve("You have three AI goals, all active."); };
@@ -180,6 +190,29 @@ function check(label, fn) {
   $("#live-save").click();
   await sleep(10);
   check("save writes a note", () => NB.getStore().notes.length === before + 1);
+
+  /* ── regression: a short reply after an answer must reach the AI ──
+     (user report: say "nice" right after NeuroBot answers → it was
+     swallowed by the echo filter) */
+  NB.askAI = (q) => { NB.__asked2 = q; return Promise.resolve("Great — noted. Anything else?"); };
+  await sleep(600); /* let the previous speak() fully finish */
+  NEXT_TRANSCRIPT = "nice";
+  $("#live-talk").click();
+  await sleep(40);
+  $("#live-talk").click();
+  await sleep(600);
+  check("short reply \"nice\" after an answer is NOT filtered", () => NB.__asked2 === "nice");
+  await sleep(600);
+
+  /* same word again later — repeat guard is windowed and short-word-exempt */
+  NEXT_TRANSCRIPT = "nice";
+  $("#live-talk").click();
+  await sleep(40);
+  $("#live-talk").click();
+  await sleep(600);
+  check("saying \"nice\" again still goes through", () => NB.__asked2 === "nice");
+  await sleep(600);
+  NB.askAI = realAsk;
 
   /* ── hands-free toggle ── */
   $("#live-hands").click();
