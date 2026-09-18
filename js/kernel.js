@@ -246,6 +246,18 @@
      3. The tab closes when the job settles; sessions WE created are then
         DELETED via the API so nothing sits idle. */
   function acquireManaged(key, log) {
+    /* limit → try the two oldest sessions first; the account caps at 5
+       concurrent, so 2 deletes ALWAYS make room — never give up. */
+    function reclaimAndRetry() {
+      if (log) log("concurrent limit — closing idle sessions to make room", "warn");
+      return listSessions(key).then(function (list) {
+        if (list.length <= 1) throw new Error("kernel limit reached and nothing to reclaim");
+        var victims = list.slice(0, 2);
+        return Promise.all(victims.map(function (s) { return deleteSession(key, s.session_id); }))
+          .then(function () { return createSession(key); })
+          .then(function (s) { s.__mine = true; return s; });
+      });
+    }
     return createSession(key).then(function (s) { s.__mine = true; return s; }, function (e) {
       if (e && e.limit) {
         if (log) log("concurrent-browser limit reached — reusing the newest browser for this run", "warn");
@@ -260,9 +272,10 @@
     });
   }
 
-  function runManaged(job, log, onSession) {
+  function runManaged(job, log, onSession, attempt) {
     var key = apiKey();
     var started = Date.now();
+    attempt = attempt || 1;
     return acquireManaged(key, log).then(function (session) {
       currentLive = session.browser_live_view_url || currentLive;
       if (onSession) { try { onSession(session); } catch (e) {} }
@@ -282,6 +295,15 @@
           function (out) { return finishTab().then(function () { return out; }); },
           function (err) { return finishTab().then(function () { throw err; }); }
         );
+      })
+      /* a fresh session can briefly 404/race at the WS layer ("Session not
+         found") — ONE retry with a brand-new session, transparently */
+      .catch(function (err) {
+        if (attempt < 2 && session.__mine) {
+          if (log) log("browser session vanished (" + (err && err.message || "error") + ") — spinning up a new one", "warn");
+          return sleep(400).then(function () { return runManaged(job, log, onSession, attempt + 1); });
+        }
+        throw err;
       });
     }).then(function (out) {
       log("browser session closed (" + Math.round((Date.now() - started) / 1000) + "s)", "ok");

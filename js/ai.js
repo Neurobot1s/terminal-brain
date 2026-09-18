@@ -234,7 +234,8 @@
       "ALWAYS reply in the user's language — default to English. " +
       "STEP 1 — scan the MEMORIES provided by the user. If they contain anything relevant, answer from them and build on it. " +
       "STEP 2 — if the memories don't cover it, answer from your own general knowledge like a normal helpful assistant (never say there is no relevant memory; just answer). " +
-      "Be concise (max ~100 words). Plain text only, no markdown.";
+      "Answer fully and completely — as long as the answer needs (short questions get short answers, deep questions get thorough ones). " +
+      "Plain text only, no markdown.";
     if (!withTools) return base;
     return base +
       "\n\nYou can also CHANGE the user's brain using these TOOLS (use 1-3 only when the user clearly asks to create, add, remember, update, complete, delete or organize something):" +
@@ -371,7 +372,7 @@
 
     return resolveModels(NB.getAIModel()).then(function (models) {
       var mIdx = 0, routeIdx = 0, transientTries = 0;
-      var maxTok = Math.max(64, Math.min(2048, maxTokens || 900));
+      var maxTok = 2048; /* allow full, detailed answers — no more cramped replies */
       var customRelay = NB.getAIRelay();
       var remembered = lsGet(ROUTE_STORE);
 
@@ -527,10 +528,10 @@
   /* Second model pass: turns raw agent output into a clean user reply. */
   function summarizeActions(question, rawReply, results) {
     var msgs = [
-      { role: "system", content: "You are NeuroBot. You just performed actions in the user's second brain. Reply in English. Report exactly what was done in at most 30 words, mentioning item titles. If something failed or wasn't found, say so briefly. Plain text, no markdown, no lists." },
+      { role: "system", content: "You are NeuroBot. You just performed actions in the user's second brain. Reply in English. Report exactly what was done in 1-3 natural sentences, mentioning item titles. If something failed or wasn't found, say so briefly. Plain text, no markdown, no lists." },
       { role: "user", content: "REQUEST: " + question + "\n\nRESULTS:\n- " + results.join("\n- ") + "\n\nYour raw reply was: " + rawReply.slice(0, 300) + "\n\nWrite the user-facing reply now." },
     ];
-    return postAI(msgs, 400).then(function (r) {
+    return postAI(msgs, 2048).then(function (r) {
       var t = r && r.ok ? extractAnswer(r.data) : "";
       return t || results.join(" · ");
     }).catch(function () { return results.join(" · "); });
@@ -542,7 +543,7 @@
     }
     callCount++;
     var msgs = messagesFor(question, opts);
-    return postAI(msgs, 1200).then(function (r) {
+    return postAI(msgs, 2048).then(function (r) {
       if (!r || !r.ok) {
         var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
         lastError = msg;
