@@ -149,6 +149,7 @@
       foot("thinking with your local NVIDIA model…");
       return think(
         "You are agentBrowse, an autonomous web-research agent inside NeuroBot. " +
+        "ALWAYS reply in English. " +
         "You explore the web one step at a time to answer the user's question.\n" +
         "Reply with EXACTLY one line, in one of these formats (choose the single most useful next step):\n" +
         "NEXT SEARCH mount everest height\n" +
@@ -247,7 +248,7 @@
     function quietStep(n) {
       if (n > MAX_STEPS) return Promise.resolve(captured || "I couldn't complete the research in time.");
       return think(
-        "You are agentBrowse, an autonomous web-research agent. " +
+        "You are agentBrowse, an autonomous web-research agent. ALWAYS reply in English. " +
         "Reply with EXACTLY one line, in one of these formats:\n" +
         "NEXT SEARCH mount everest height\n" +
         "NEXT OPEN Mount Everest\n" +

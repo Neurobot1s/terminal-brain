@@ -231,6 +231,7 @@
   function agentSystemPrompt(withTools) {
     var base =
       "You are NeuroBot, a personal second-brain assistant. " +
+      "ALWAYS reply in the user's language — default to English. " +
       "STEP 1 — scan the MEMORIES provided by the user. If they contain anything relevant, answer from them and build on it. " +
       "STEP 2 — if the memories don't cover it, answer from your own general knowledge like a normal helpful assistant (never say there is no relevant memory; just answer). " +
       "Be concise (max ~100 words). Plain text only, no markdown.";
@@ -460,13 +461,22 @@
       .replace(/^\s*[-*]\s+/gm, "· ");             /* list bullets → · */
   }
 
+  /* Reasoning models (gpt-oss) sometimes return an empty content field and
+     put their chain-of-thought in `reasoning` — often in Chinese. Using
+     that as the answer leaked foreign text into the UI, so we now only
+     accept reasoning that is mostly Latin text, and only the tail of it. */
+  function latinRatio(s) {
+    var t = String(s || "").replace(/[^\u0000-\u024f]/g, "");
+    return t.length / Math.max(1, String(s || "").length);
+  }
   function extractAnswer(data) {
     var c = data && data.choices && data.choices[0] && (data.choices[0].message || data.choices[0]);
     if (!c) return "";
     var text = String(c.content || c.text || "").trim();
     if (!text && (c.reasoning || c.reasoning_content)) {
       var rc = String(c.reasoning || c.reasoning_content || "").trim();
-      text = rc.length > 400 ? rc.slice(-400) : rc;
+      /* only fall back to reasoning if it's mostly Latin script */
+      if (rc && latinRatio(rc) > 0.7) text = rc.length > 400 ? rc.slice(-400) : rc;
     }
     return stripMarkdown(text).trim();
   }
@@ -517,7 +527,7 @@
   /* Second model pass: turns raw agent output into a clean user reply. */
   function summarizeActions(question, rawReply, results) {
     var msgs = [
-      { role: "system", content: "You are NeuroBot. You just performed actions in the user's second brain. Report exactly what was done in at most 30 words, mentioning item titles. If something failed or wasn't found, say so briefly. Plain text, no markdown, no lists." },
+      { role: "system", content: "You are NeuroBot. You just performed actions in the user's second brain. Reply in English. Report exactly what was done in at most 30 words, mentioning item titles. If something failed or wasn't found, say so briefly. Plain text, no markdown, no lists." },
       { role: "user", content: "REQUEST: " + question + "\n\nRESULTS:\n- " + results.join("\n- ") + "\n\nYour raw reply was: " + rawReply.slice(0, 300) + "\n\nWrite the user-facing reply now." },
     ];
     return postAI(msgs, 400).then(function (r) {

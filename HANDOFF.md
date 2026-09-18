@@ -6,6 +6,9 @@
 ## Current state (2026-09-17) — ALL GREEN
 All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 checks), `ai`. 23/23 E2E at the production origin (jsdom harness `/tmp/nb-e2e.js` — temp, not in repo). All 12 JS files syntax-clean. Nothing pending.
 
+## Hotfix — Chinese text leaking into answers
+- gpt-oss sometimes returns empty `content` + chain-of-thought in `reasoning` **in Chinese**. `extractAnswer` used to fall back to that raw reasoning → Chinese in the UI. Now the reasoning fallback is only used when it's ≥70% Latin script (`latinRatio`), and "ALWAYS reply in the user's language — default to English" is pinned in the agent system prompt, summarize pass, and both agentBrowse prompts.
+
 ## Latest round — agentBrowse (watchable web-browsing agent)
 - **`js/agent-browse.js` (NEW, loads after ai.js, before voice.js — index.html + E2E order check updated).** In-site research agent: real Wikipedia REST+API fetches (CORS-open) + optional `r.jina.ai` reader for arbitrary URLs, reasoning loop via **`NB.rawAI`** (new ai.js export: raw postAI call).
 - Loop: model replies `NEXT SEARCH|OPEN|READ|ANSWER <arg>` (parser accepts with/without NEXT — models drop the prefix; small models need CONCRETE examples in prompts, not `<template>` meta-syntax, or they echo it). Max 7 steps. Watchable panel `#ab-panel`: fake browser chrome + viewport (pages/links render live), step log (⚡/✓/✗), status pill, GET foot. Also `NB.agentBrowseQuiet(query)` — same loop, no UI, returns the ANSWER text.
