@@ -3,8 +3,24 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
-## Current state (2026-09-17) — ALL GREEN
-All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 checks), `ai`. 23/23 E2E at the production origin (jsdom harness `/tmp/nb-e2e.js` — temp, not in repo). All 12 JS files syntax-clean. Nothing pending.
+## Current state (2026-09-18) — ALL GREEN
+All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 12 JS files syntax-clean (`node --check`). Kernel org left with **0 idle sessions** (verified via API). Nothing pending.
+
+## Latest round — Apple-grade UI polish + responsiveness (styles.perf.css §11–13)
+- **Typography system:** new `--sans` stack (SF Pro/Segoe/Inter) applied to all *reading* surfaces (Live bubbles, ask answers, card bodies, empty states) while chrome stays mono → the terminal identity is intact but text is far more readable. Tabular numerals on stat values/times so counters don't jitter. Fluid `clamp()` hero + page headings.
+- **Motion language:** `--spring` bezier; soft page transition on route change (`main.js` adds `.route-in` with a reflow trick so it replays); iOS-style press feedback (`scale(0.96)`) on every tappable; toasts and modals animate on the compositor only (transform/opacity). `prefers-reduced-motion` + `body.reduce-motion` honored.
+- **Depth:** hairline top-light (`inset 0 1px 0`) + layered hover shadows on panels/stat/mem cards.
+- **Responsive:** safe-area insets (topbar/view/sidebar/status bar), iOS bottom-sheet modals (≤640px, `92dvh` + `sheetUp` spring), crossfading scrim (opacity instead of display flip), desktop-only topbar vibrancy (`backdrop-filter` guarded to ≥861px), landscape-phone compaction, `overscroll-behavior: contain` on all scroll containers, webkit autofill dark-theme fix, 44px nav targets on mobile.
+- **main.js:** route change replays the `.route-in` animation (remove → reflow → add).
+
+## Kernel Browser — final state (read this before touching)
+- **REST create/list/delete is CORS-blocked from browsers. Verified exhaustively:** preflight returns 405 with zero ACAO headers from every origin; the POST itself *executes* but the browser can't read the response (no ACAO on it either). No allow-listing exists.
+- **All public CORS forwarders tested and dead:** corsproxy.io (401 paid), allorigins (timeout), thingproxy (dead), codetabs (timeout), whateverorigin (GET-only, 405 on POST), cors.lol (429), crossorigin.me (dead), r.jina.ai (timeout), cors-anywhere demo (403 needs opt-in), test.cors.workers.dev (429). **Do not ship an auto-fallback to public proxies — it cannot work.**
+- Therefore: browser CAN'T spin up sessions by itself. Two working paths:
+  1. **Settings → Kernel Browser → relay field** + `kernel-relay.js` (Cloudflare Worker, 2-min deploy) → full fresh-session-per-run mode, auto-used by agentBrowse + Live voice.
+  2. No relay → agentBrowse falls back to in-site readers (Wikipedia/jina) with honest messaging; Live voice keeps working (chat/TTS don't need Kernel).
+- CDP WebSocket + live-view iframe connect DIRECTLY (no CORS on WS/iframes) once a session exists.
+- Fresh-session-per-run + delete-on-finish + limit-reclaim logic all live in `js/kernel.js` (`acquireManaged`, `runManaged` with the vanish-retry). Settings test button labels honestly.
 
 ## Hotfix — Chinese text leaking into answers
 - gpt-oss sometimes returns empty `content` + chain-of-thought in `reasoning` **in Chinese**. `extractAnswer` used to fall back to that raw reasoning → Chinese in the UI. Now the reasoning fallback is only used when it's ≥70% Latin script (`latinRatio`), and "ALWAYS reply in the user's language — default to English" is pinned in the agent system prompt, summarize pass, and both agentBrowse prompts.
@@ -23,6 +39,13 @@ All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 ch
 - Dashboard mic button = **real dictation** now (browser SR → fills input; `.rec` pulse style).
 - `NB.__agent` exports parseAgentReply/applyOps/findItem for tests; `tests/agent.test.js` (21 offline checks, jsdom) + live network probe all pass.
 - Gotchas fixed while building: parser must brace-match (models put ACTION+SAID on one line); add-branch regex `/^add_(note|idea|goal|knowledge)$/`; kind defaults from op name.
+
+## Previous round (morning)
+- **Answer-length caps removed** (`js/ai.js`): prompt now says "Answer fully and completely"; every path gets the full 2048-token budget; agentBrowse step budget 300→500.
+- **Live readability** (`styles.perf.css` §6/§7): bubbles 15.5px/1.6, thread 52vh, wider voice pane on desktop splits.
+- **"Session not found" hardening** (`js/kernel.js`): vanished-session race auto-retries once with a brand-new session; concurrent-limit path closes up to 2 idle sessions to make room before reusing.
+- Settings → Kernel Browser gained mode/key/relay fields + honest "Check browser access" output.
+- `tsconfig.json` fixed for the platform typecheck (was `files: []` → TS18002); include only `src/**` — the vanilla app isn't typechecked.
 
 ## Previous round (night)
 - **Device TTS rebuilt** (voice.js `browserSpeak`): 120ms settle after `cancel()` (Chrome drops the next utterance otherwise — the silent-answer bug), voice picking (best en voice by name), 180-char chunking with queued playback, per-chunk watchdog for lost `onend`, global `speakToken` so Stop/cancel kills queued chunks.

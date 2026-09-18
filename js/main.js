@@ -34,6 +34,10 @@
     var view = $("#view");
     view.innerHTML = "";
     view.appendChild(ROUTES[hash]());
+    /* soft page transition — restart the animation on every route change */
+    view.classList.remove("route-in");
+    void view.offsetWidth; /* reflow so the animation can replay */
+    view.classList.add("route-in");
     window.scrollTo(0, 0);
     closeMobileNav();
   }
