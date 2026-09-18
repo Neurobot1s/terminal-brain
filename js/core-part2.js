@@ -244,6 +244,37 @@
 
   /* ---------- Neural graph (SVG, visual demo) ---------- */
 
+  /* Count-up animation for dashboard stat values (Apple-style).
+     Cheap: one rAF loop, only animates whole-number counters,
+     respects the reduced-motion prefs, no-ops on non-elements. */
+  NB.animateCounters = function (root) {
+    var nodes;
+    try { nodes = (root || document).querySelectorAll(".stat-val"); } catch (e) { return; }
+    if (!nodes.length) return;
+    var reduce = false;
+    try { reduce = /reduce/.test(String(window.getComputedStyle && getComputedStyle(document.body).getPropertyValue("animation-duration")));
+    } catch (e) {}
+    if (reduce || document.body.classList.contains("reduce-motion")) return;
+    var DUR = 650;
+    nodes.forEach(function (node) {
+      var end = parseInt(node.textContent, 10);
+      if (isNaN(end) || end <= 0) return; /* "0" renders instantly, no flash */
+      if (node.__counting) return;
+      node.__counting = true;
+      var t0 = null;
+      function step(ts) {
+        if (!node.isConnected) { node.__counting = false; return; }
+        if (t0 === null) t0 = ts;
+        var p = Math.min(1, (ts - t0) / DUR);
+        var eased = 1 - Math.pow(1 - p, 3); /* ease-out cubic */
+        node.textContent = String(Math.round(end * eased));
+        if (p < 1) requestAnimationFrame(step);
+        else node.__counting = false;
+      }
+      requestAnimationFrame(step);
+    });
+  };
+
   NB.renderGraph = function (target, opts) {
     if (!target) return;
     opts = opts || {};

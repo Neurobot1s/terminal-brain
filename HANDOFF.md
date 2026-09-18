@@ -6,7 +6,16 @@
 ## Current state (2026-09-18) — ALL GREEN
 All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 12 JS files syntax-clean (`node --check`). Kernel org left with **0 idle sessions** (verified via API). Nothing pending.
 
-## Latest round — Apple-grade UI polish + responsiveness (styles.perf.css §11–13)
+## Round 2 — micro-interactions + living data (styles.perf.css §14–15)
+- **Entrance choreography:** stat cards/panels cascade in with 30–40ms steps (`cardIn`, spring); graph nodes pop in staggered + radial halo behind the graph (`core-part2.js` renderGraph unchanged — CSS only).
+- **Count-up stat animation:** `NB.animateCounters(view)` (core-part2.js) animates `.stat-val` numbers 0→N over 650ms ease-out-cubic, one rAF per node, skips 0/reduced-motion, auto-cancels if the node leaves the DOM. Called from main.js after each route render.
+- **Route transition is now hash-aware** (main.js): `route()` tracks `lastHash` — the `.route-in` animation only plays on REAL navigation, not on data-op re-renders (pin/delete re-dispatch `hashchange` with the same hash; replaying there was obnoxious).
+- **Living timestamps:** dashboard `act-time` labels refresh every 60s (views-dashboard.js timer, dashboard route only, skipped while `NB.suppressRerender`) so "just now" never goes stale.
+- **Swipe-to-delete on touch** (fx.js + styles.perf.css §15): horizontal swipe (>48px, must be more horizontal than vertical or it's left alone as a scroll) on activity/notification rows reveals the delete button (`swipe-open` class); tap-elsewhere closes. CSS-only layout, `coarse pointer` media query so desktop is untouched.
+- **Rich empty states** (views-collections.js `emptyState()`): My Brain/Notes/Knowledge/Goals empty pages now show live brain-stats tags (counts per kind) + ALL four capture buttons + a keyboard tip. No dead ends.
+- **Connections page is live:** side panel now computes real potential pairs (n·(n−1)/2 per topic group), active topics (2+ memories), and total memories — same math as the dashboard counter (views-misc.js).
+
+## Round 1 — Apple-grade UI polish + responsiveness (styles.perf.css §11–13)
 - **Typography system:** new `--sans` stack (SF Pro/Segoe/Inter) applied to all *reading* surfaces (Live bubbles, ask answers, card bodies, empty states) while chrome stays mono → the terminal identity is intact but text is far more readable. Tabular numerals on stat values/times so counters don't jitter. Fluid `clamp()` hero + page headings.
 - **Motion language:** `--spring` bezier; soft page transition on route change (`main.js` adds `.route-in` with a reflow trick so it replays); iOS-style press feedback (`scale(0.96)`) on every tappable; toasts and modals animate on the compositor only (transform/opacity). `prefers-reduced-motion` + `body.reduce-motion` honored.
 - **Depth:** hairline top-light (`inset 0 1px 0`) + layered hover shadows on panels/stat/mem cards.

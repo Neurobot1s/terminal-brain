@@ -4,7 +4,7 @@
   "use strict";
   if (!window.NB) return;
   var $ = NB.$, $$ = NB.$$, el = NB.el, esc = NB.esc;
-  var getStore = NB.getStore, resetDemo = NB.resetDemo, clearAll = NB.clearAll;
+  var getStore = NB.getStore, resetDemo = NB.resetDemo, clearAll = NB.clearAll, totalItems = NB.totalItems;
   var renderGraph = NB.renderGraph, openModal = NB.openModal, toast = NB.toast;
   var loadPrefs = NB.loadPrefs, savePrefs = NB.savePrefs;
   function rerender() { window.dispatchEvent(new Event("hashchange")); }
@@ -13,6 +13,18 @@
      CONNECTIONS
      ============================================================ */
   NB.ConnectionsView = function () {
+    /* real numbers: memories sharing a category/topic form the pairs */
+    var s = getStore();
+    var groups = {};
+    function add(key) { if (key) groups[key] = (groups[key] || 0) + 1; }
+    s.notes.forEach(function (n) { add(n.category); });
+    s.ideas.forEach(function (i) { add(i.category); });
+    s.goals.forEach(function (g) { add(g.category); });
+    s.knowledge.forEach(function (k) { add(k.topic); });
+    var pairs = 0, activeTopics = 0;
+    Object.keys(groups).forEach(function (k) {
+      if (groups[k] > 1) { pairs += (groups[k] * (groups[k] - 1)) / 2; activeTopics++; }
+    });
     var root = el('<div class="page">' +
       '<header class="page-head"><div><h1>Connections</h1><p class="muted">Visual prototype — connections are illustrative, not AI-generated.</p></div></header>' +
       '<div class="conn-grid">' +
@@ -20,7 +32,10 @@
         '<aside class="panel side-panel">' +
           '<h3>About connections</h3>' +
           '<p class="muted">Connections represent relationships between information in your second brain.</p>' +
-          '<p class="muted">When two memories share concepts, NeuroBot will surface them here so you can navigate knowledge as a graph rather than a pile.</p>' +
+          '<div class="hint" style="margin:0 0 10px"><p><span class="legend-dot leaf"></span><strong>' + pairs + "</strong> potential pairs — memories that share a topic</p>" +
+          '<p><span class="legend-dot hub"></span><strong>' + activeTopics + "</strong> topics with 2+ memories</p>" +
+          '<p><span class="legend-dot leaf"></span><strong>' + totalItems() + '</strong> total memories feeding the graph</p></div>' +
+          '<p class="muted">Capture more in one area and its node grows — the graph mirrors how your knowledge clusters.</p>' +
           '<div class="hint"><p><strong>Legend</strong></p>' +
           '<p><span class="legend-dot hub"></span> hub nodes</p>' +
           '<p><span class="legend-dot leaf"></span> topic nodes</p>' +

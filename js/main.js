@@ -23,9 +23,14 @@
     "#/knowledge": "knowledge", "#/goals": "goals", "#/connections": "connections", "#/settings": "settings",
   };
 
+  var lastHash = null;
   function route() {
     var hash = location.hash || "#/";
     if (!ROUTES[hash]) hash = "#/";
+    /* animate ONLY real navigation — data ops re-render via hashchange
+       with the same hash and must not replay the page transition */
+    var navigated = hash !== lastHash;
+    lastHash = hash;
     $$("#nav a").forEach(function (a) {
       a.classList.toggle("active", a.getAttribute("href") === hash);
     });
@@ -34,10 +39,13 @@
     var view = $("#view");
     view.innerHTML = "";
     view.appendChild(ROUTES[hash]());
-    /* soft page transition — restart the animation on every route change */
-    view.classList.remove("route-in");
-    void view.offsetWidth; /* reflow so the animation can replay */
-    view.classList.add("route-in");
+    /* soft page transition on real navigation only */
+    if (navigated) {
+      view.classList.remove("route-in");
+      void view.offsetWidth; /* reflow so the animation can replay */
+      view.classList.add("route-in");
+    }
+    if (NB.animateCounters) NB.animateCounters(view);
     window.scrollTo(0, 0);
     closeMobileNav();
   }

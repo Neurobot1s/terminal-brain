@@ -46,6 +46,37 @@
     });
   }
 
+  /* ---------- rich empty states ----------
+     Empty pages shouldn't feel dead: they show live brain stats and every
+     capture action, so a new user always knows what to do next. */
+  function emptyState(icon, headline, sub, captureKind) {
+    var s = getStore();
+    var total = (s.notes.length + s.ideas.length + s.goals.length + s.knowledge.length);
+    var stats = [
+      ["notes", s.notes.length, "✎", "cyan"], ["ideas", s.ideas.length, "✦", "amber"],
+      ["goals", s.goals.length, "◎", "violet"], ["knowledge", s.knowledge.length, "◈", "green"],
+    ];
+    return '<div class="empty empty-rich"><span class="empty-ico">' + icon + "</span>" +
+      "<strong>" + esc(headline) + "</strong>" +
+      '<p class="muted">' + esc(sub) + "</p>" +
+      (total ? '<div class="empty-stats">' + stats.map(function (st) {
+          return '<span class="tag ' + st[3] + '">' + st[2] + " " + st[1] + " " + st[0] + "</span>";
+        }).join("") + "</div>" : "") +
+      '<div class="empty-cta">' +
+        '<button class="btn btn-primary btn-sm" data-empty-capture="note">✎ New Note</button>' +
+        '<button class="btn btn-outline btn-sm" data-empty-capture="idea">✦ New Idea</button>' +
+        '<button class="btn btn-outline btn-sm" data-empty-capture="knowledge">◈ Save Thought</button>' +
+        '<button class="btn btn-outline btn-sm" data-empty-capture="goal">◎ Add Goal</button>' +
+        (captureKind ? '<span class="muted-xs" style="flex-basis:100%">tip: press ' +
+          ({ note: "N", idea: "I", goal: "G", knowledge: "Ctrl+K" }[captureKind] || "Ctrl+K") + " anywhere</span>" : "") +
+      "</div></div>";
+  }
+  function wireEmptyStates(root, renderList) {
+    $$('[data-empty-capture]', root).forEach(function (b) {
+      b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); });
+    });
+  }
+
   /* ============================================================
      MY BRAIN
      ============================================================ */
@@ -83,9 +114,11 @@
       $("#brain-count", root).textContent = all().length + " memories across your brain";
       var list = $("#brain-list", root);
       list.innerHTML = items.length ? items.map(card).join("") :
-        '<div class="empty"><span class="empty-ico">◌</span>' + (q || kind !== "all" ? "No memories match. Try another search." : "Your brain is empty — capture your first memory.") +
-        (q || kind !== "all" ? "" : '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="note">＋ New Note</button><button class="btn btn-outline btn-sm" data-empty-capture="idea">＋ New Idea</button></div>') + "</div>";
+        (q || kind !== "all"
+          ? '<div class="empty"><span class="empty-ico">◌</span>No memories match. Try another search.</div>'
+          : emptyState("◌", "Your brain is empty", "Capture your first memory — a thought, a goal, anything you want to keep."));
       wireCards(list, renderList);
+      wireEmptyStates(list);
     }
     $("#brain-q", root).addEventListener("input", NB.debounce(renderList, 120));
     $("#brain-kind", root).addEventListener("change", renderList);
@@ -128,10 +161,11 @@
       list.innerHTML = items.length ? items.map(function (n) {
         var m = ITEM_META.note;
         return memShell(n, m.tone, m.icon, n.category, '<p class="mem-body">' + esc(n.body || "") + "</p>");
-      }).join("") : '<div class="empty"><span class="empty-ico">✎</span>' + (q || cat !== "all" ? "No notes match your search." : "No notes yet. Capture your first thought.") +
-        (!q && cat === "all" ? '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="note">＋ New Note</button></div>' : "") + "</div>";
+      }).join("") : (q || cat !== "all"
+        ? '<div class="empty"><span class="empty-ico">✎</span>No notes match your search.</div>'
+        : emptyState("✎", "No notes yet", "Capture your first thought — it stays on this device, and the AI can use it as context."));
       wireCards(list, renderList);
-      $$('[data-empty-capture]', list).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
+      wireEmptyStates(list);
     }
     $("#notes-q", root).addEventListener("input", NB.debounce(renderList, 120));
     $("#notes-cat", root).addEventListener("change", renderList);
@@ -164,9 +198,9 @@
           '<div class="grid-cards">' + items.map(function (k) {
             return memShell(k, tone, "◈", k.source || t, '<p class="mem-body">' + esc(k.body || "") + "</p>");
           }).join("") + "</div></section>";
-      }).join("") : '<div class="empty"><span class="empty-ico">◈</span>No knowledge yet. Save what you learn.<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="knowledge">＋ Add Knowledge</button></div></div>';
+      }).join("") : emptyState("◈", "No knowledge yet", "Save what you learn — grouped by topic, and every card feeds the AI's context.", "knowledge");
       wireCards($("#kn-groups", root), renderList);
-      $$('[data-empty-capture]', $("#kn-groups", root)).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
+      wireEmptyStates($("#kn-groups", root));
     }
     $("#kn-add", root).addEventListener("click", function () { openCapture("knowledge"); });
     renderList();
@@ -201,10 +235,11 @@
       var active = s.goals.filter(function (g) { return g.status === "active"; }).length;
       $("#goals-count", root).textContent = active + " active · " + s.goals.length + " total";
       var list = $("#goals-list", root);
-      list.innerHTML = items.length ? items.map(goalCard).join("") : '<div class="empty"><span class="empty-ico">◎</span>' + (q || st !== "all" ? "No goals match your filters." : "No goals yet. Set one and start making progress.") +
-        (!q && st === "all" ? '<div class="empty-cta"><button class="btn btn-primary btn-sm" data-empty-capture="goal">＋ Add Goal</button></div>' : "") + "</div>";
+      list.innerHTML = items.length ? items.map(goalCard).join("") : (q || st !== "all"
+        ? '<div class="empty"><span class="empty-ico">◎</span>No goals match your filters.</div>'
+        : emptyState("◎", "No goals yet", "Set one and watch the progress bar move. Deadlines get countdowns automatically.", "goal"));
       wireGoalCards(list, renderList);
-      $$('[data-empty-capture]', list).forEach(function (b) { b.addEventListener('click', function () { openCapture(b.getAttribute('data-empty-capture')); }); });
+      wireEmptyStates(list);
     }
     function wireGoalCards(list, renderList) {
       $$("[data-pin]", list).forEach(function (b) {

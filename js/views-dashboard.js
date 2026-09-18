@@ -17,6 +17,25 @@
   }
   var ROUTE_BY_TONE = { cyan: "#/knowledge", amber: "#/ideas", violet: "#/goals", green: "#/connections", gray: "#/brain" };
 
+  /* Fresh relative timestamps — a timer refreshes every "x ago" on the
+     dashboard once a minute so nothing says "just now" forever. */
+  if (!NB.__timeAgoTimer) {
+    NB.__timeAgoTimer = setInterval(function () {
+      if (NB.suppressRerender) return;
+      var hash = location.hash || "#/";
+      if (hash !== "#/" && hash !== "") return; /* dashboard only */
+      var times = document.querySelectorAll(".act-time");
+      if (!times.length) return;
+      var rows = document.querySelectorAll("#recent-list .activity-row");
+      rows.forEach(function (row, i) {
+        var del = row.querySelector("[data-del-act]");
+        var store = NB.getStore();
+        var act = del && store.activity.find(function (a) { return a.id === del.getAttribute("data-del-act"); });
+        if (act && times[i]) times[i].textContent = NB.timeAgo(act.createdAt);
+      });
+    }, 60000);
+  }
+
   /* Connections = real pairs of memories sharing a topic/category. */
   function countConnections() {
     var s = getStore(), groups = {};

@@ -613,3 +613,105 @@ body.reduce-motion .view.route-in { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   .view.route-in, .toast { animation: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   14. ROUND 2 — micro-interactions + entrance choreography
+   ═══════════════════════════════════════════════════════════════ */
+
+/* stat cards + memory cards cascade in on page entry (30ms steps) */
+.route-in .stat-card, .route-in .panel, .route-in .mem-card {
+  animation: cardIn 0.44s var(--spring) backwards;
+}
+.route-in .stat-card:nth-child(1) { animation-delay: 0.02s; }
+.route-in .stat-card:nth-child(2) { animation-delay: 0.06s; }
+.route-in .stat-card:nth-child(3) { animation-delay: 0.10s; }
+.route-in .stat-card:nth-child(4) { animation-delay: 0.14s; }
+.route-in .stat-card:nth-child(5) { animation-delay: 0.18s; }
+.route-in .panel:nth-of-type(1) { animation-delay: 0.10s; }
+.route-in .panel:nth-of-type(2) { animation-delay: 0.16s; }
+.route-in .panel:nth-of-type(3) { animation-delay: 0.22s; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(12px) scale(0.985); } }
+
+/* graph: nodes drop in with a springy pop; halo behind the whole graph */
+.graph-node { animation: nodeIn 0.5s var(--spring) backwards; }
+.graph-node:nth-of-type(1) { animation-delay: 0.05s; }
+.graph-node:nth-of-type(2) { animation-delay: 0.12s; }
+.graph-node:nth-of-type(3) { animation-delay: 0.19s; }
+.graph-node:nth-of-type(4) { animation-delay: 0.26s; }
+.graph-node:nth-of-type(5) { animation-delay: 0.33s; }
+.graph-node:nth-of-type(6) { animation-delay: 0.40s; }
+@keyframes nodeIn { from { opacity: 0; transform: translate(var(--tx, 0), var(--ty, 0)) scale(0.4); } }
+.graph-wrap::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(420px 200px at 50% 30%, rgba(124,156,255,.06), transparent 70%);
+}
+
+/* memory cards: pointer-tracking tilt + glow (desktop only, no jank) */
+@media (hover: hover) and (pointer: fine) {
+  .mem-card, .stat-card { transition: transform 0.2s var(--ease), border-color 0.18s var(--ease), box-shadow 0.25s var(--ease); will-change: transform; }
+  .mem-card:hover { transform: translateY(-3px); }
+}
+
+/* focus ring: softened, only on keyboard focus — less visual noise */
+:focus:not(:focus-visible) { outline: none; }
+
+/* image-free shimmer for the “spinning up” browser placeholder */
+.ab-boot {
+  background: linear-gradient(90deg, transparent, rgba(124,156,255,.06), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* iOS-style momentum + rubber-band on the mobile nav drawer */
+@media (max-width: 860px) {
+  .sidebar { transition: transform 0.34s var(--spring); }
+}
+
+/* ideas board on phones: one column per swipe — native feeling */
+@media (max-width: 640px) {
+  .kanban { display: grid; grid-auto-flow: column; grid-auto-columns: 86%;
+    overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px;
+    padding-bottom: 8px; scrollbar-width: none; }
+  .kanban::-webkit-scrollbar { display: none; }
+  .kanban-col { scroll-snap-align: start; }
+}
+body.reduce-motion .route-in .stat-card,
+body.reduce-motion .route-in .panel,
+body.reduce-motion .route-in .mem-card,
+body.reduce-motion .graph-node,
+body.reduce-motion .ab-boot { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .route-in .stat-card, .route-in .panel, .route-in .mem-card,
+  .graph-node, .ab-boot { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   15. TOUCH — swipe-to-reveal delete (phones only)
+   Activity rows slide left to expose a red delete zone, iOS-style.
+   The JS in fx.js just toggles a class; CSS does the layout.
+   ═══════════════════════════════════════════════════════════════ */
+@media (hover: none) and (pointer: coarse) {
+  .activity-row, .notif-row { position: relative; overflow: hidden; }
+  .activity-row .row-del, .notif-row .row-del {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 64px;
+    opacity: 1; display: flex; align-items: center; justify-content: center;
+    background: rgba(248,113,113,.14); color: #fca5a5; font-size: 17px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    transform: translateX(100%); transition: transform .22s var(--spring);
+  }
+  .activity-row.swipe-open .row-del, .notif-row.swipe-open .row-del { transform: translateX(0); }
+  .activity-row.swiping { transition: none; }
+}
+
+/* keyboard help: subtle kbd press effect in the shortcuts modal */
+.sc-keys kbd { transition: transform .12s var(--ease); }
+.sc-keys kbd:active { transform: translateY(1px); }
+
+/* rich empty states: live stats + every capture action, never a dead end */
+.empty-rich { padding: 40px 22px; }
+.empty-rich strong { display: block; font-size: 16.5px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px; }
+.empty-rich .muted { max-width: 46ch; margin: 0 auto 14px; }
+.empty-stats { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin-bottom: 6px; }
+.empty-cta .muted-xs { flex-basis: 100%; margin-top: 2px; }
+.empty-cta kbd { font-size: 10px; padding: 1px 5px; }
