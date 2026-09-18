@@ -482,6 +482,14 @@
     return m;
   }
 
+  /* Raw model call for internal agents (agentBrowse). messages = OpenAI-style. */
+  NB.rawAI = function (messages, maxTokens) {
+    return postAI(messages, maxTokens || 500).then(function (r) {
+      if (!r || !r.ok) throw new Error(upstreamMsg(r, "HTTP " + (r ? r.status : "?")));
+      return extractAnswer(r.data);
+    });
+  };
+
   /* Agent internals — exposed for offline tests. */
   NB.__agent = { parseAgentReply: parseAgentReply, applyOps: applyOps, findItem: findItem };
 

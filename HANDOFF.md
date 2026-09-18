@@ -6,7 +6,13 @@
 ## Current state (2026-09-17) — ALL GREEN
 All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 checks), `ai`. 23/23 E2E at the production origin (jsdom harness `/tmp/nb-e2e.js` — temp, not in repo). All 12 JS files syntax-clean. Nothing pending.
 
-## Latest round — AI AGENT (writes to the brain)
+## Latest round — agentBrowse (watchable web-browsing agent)
+- **`js/agent-browse.js` (NEW, loads after ai.js, before voice.js — index.html + E2E order check updated).** In-site research agent: real Wikipedia REST+API fetches (CORS-open) + optional `r.jina.ai` reader for arbitrary URLs, reasoning loop via **`NB.rawAI`** (new ai.js export: raw postAI call).
+- Loop: model replies `NEXT SEARCH|OPEN|READ|ANSWER <arg>` (parser accepts with/without NEXT — models drop the prefix; small models need CONCRETE examples in prompts, not `<template>` meta-syntax, or they echo it). Max 7 steps. Watchable panel `#ab-panel`: fake browser chrome + viewport (pages/links render live), step log (⚡/✓/✗), status pill, GET foot. Also `NB.agentBrowseQuiet(query)` — same loop, no UI, returns the ANSWER text.
+- **🌐 trigger button** injected into the dashboard ask-box (`wireChatButton`, re-wired on hashchange since the view re-renders). Type a question → 🌐 → watch the agent work in real time.
+- Tests: `tests/agent-browse.test.js` (booted jsdom, scripted rawAI, stubbed wiki fetch — 14 checks incl. viewport rendering, log streaming, button wiring). **Live verified**: "tallest mountain…" → SEARCH → OPEN → ANSWER "Mount Everest … 8,849 m" in 4s.
+
+## Previous round — AI AGENT (writes to the brain)
 - **The AI now ACTS, not just answers.** System prompt teaches an `ACTION {"op":...}` protocol; model replies are parsed (brace-matched, one-line-safe), applied to the store, then a **second model pass** summarizes what was done (≤30 words, mentions titles).
 - Ops: `add_note/add_idea/add_goal/add_knowledge` (kind also derived from op name), `update` (partial patch by exact-title match), `delete`, `pin`. All values sanitized (enum statuses/topics/categories, progress clamped 0–100, ISO-or-no deadline, ≤5 ops).
 - Guardrails in prompt: only emit ACTION on explicit save/create/update/delete intent; questions and general knowledge never write. Verified live: "remember my dentist…" → note written; "what do I have about dentist…" → answered from memory; "who wrote 1984?" → answered, no write.
