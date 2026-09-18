@@ -713,6 +713,13 @@
     function liveUrl() {
       return NB.kernelLiveUrl ? (NB.kernelLiveUrl() || "") : "";
     }
+    /* a fresh browser spins up per run — re-embed its live view when it exists */
+    function refreshPaneFrame() {
+      var frame = modal.body.querySelector("#live-pane-frame");
+      var url = liveUrl();
+      if (!frame || !url) return;
+      if (frame.getAttribute("src") !== url) frame.setAttribute("src", url);
+    }
     function openPane() {
       if (paneOpen || isPhone() || !liveUrl()) return;
       var stage = modal.body.querySelector(".live");
@@ -724,7 +731,7 @@
       pane.innerHTML =
         '<div class="live-pane-head"><span class="live-pane-dot"></span><span>neurobot · cloud browser</span>' +
         '<button type="button" class="live-pane-close" title="Hide browser pane">×</button></div>' +
-        '<iframe class="live-pane-frame" src="' + esc(liveUrl()) + '" allow="clipboard-read; clipboard-write" allowfullscreen></iframe>' +
+        '<iframe class="live-pane-frame" id="live-pane-frame" src="' + esc(liveUrl()) + '" allow="clipboard-read; clipboard-write" allowfullscreen></iframe>' +
         '<div class="live-pane-foot">watching the kernel browser — the agent works while you keep talking</div>';
       stage.insertBefore(pane, stage.firstChild);
       stage.classList.add("split");
@@ -747,7 +754,8 @@
     function runBrowserTask(q) {
       browseCount++;
       if (!liveUrl()) {
-        /* no embedded live view available — fall back to the watchable panel */
+        /* first run of the session — kernelLiveUrl is set the moment the
+           browser exists, so fall back to the watchable panel until then */
         bubble("ai", "Opening the watchable browser panel… 🌐");
         if (NB.agentBrowse) NB.agentBrowse(q);
         return;
@@ -766,6 +774,12 @@
           });
       }, function (m, tone) {
         if (tone === "ok") bubble("ai", "🌐 " + m);
+      }, function (session) {
+        /* fresh browser exists → embed its live view now (desktop split pane) */
+        var url = session && (session.browser_live_view_url || session.live);
+        if (!url) return;
+        if (!isPhone()) { if (!paneOpen) openPane(); refreshPaneFrame(); }
+        bubble("ai", "🌐 Fresh cloud browser is live — watching it " + (isPhone() ? "in the panel." : "on the right."));
       }).then(function (results) {
         var summary = results ? results.slice(0, 260) : "I opened the results in the cloud browser.";
         bubble("ai", "Done — here's what I found: " + summary);

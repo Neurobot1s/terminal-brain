@@ -78,7 +78,9 @@
   var running = false;
 
   function panelHTML() {
-    /* Kernel mode embeds the REAL live view of the cloud browser */
+    /* Kernel mode embeds the REAL live view of the cloud browser.
+       A fresh session is created per run — the iframe is injected the
+       moment the browser exists (see setLive). */
     var kernelOn = NB.kernelMode && NB.kernelMode() !== "off";
     var live = kernelOn && NB.kernelLiveUrl ? NB.kernelLiveUrl() : "";
     return '<div class="ab-wrap kernel">' +
@@ -88,9 +90,9 @@
         '<span class="ab-status" id="ab-status">idle</span>' +
         '<button class="btn btn-outline btn-sm" id="ab-close">Close</button>' +
       "</div>" +
-      (live
+      (kernelOn
         ? '<div class="ab-viewwrap" id="ab-viewwrap">' +
-            '<iframe id="ab-live" class="ab-live" src="' + esc(live) + '" allow="clipboard-read; clipboard-write" allowfullscreen></iframe>' +
+            (live ? "" : '<div class="ab-boot" id="ab-boot">spinning up a fresh cloud browser…</div>') +
             '<div class="ab-reconnect" id="ab-reconnect" hidden>' +
               '<div class="ab-reconnect-box">' +
                 '<p>The cloud browser went to sleep — it closes itself when idle.</p>' +
@@ -98,11 +100,32 @@
               "</div>" +
             "</div>" +
           "</div>"
-        : "") +
+        : '<div class="ab-viewwrap" id="ab-viewwrap"></div>') +
       '<div class="ab-log" id="ab-log"></div>' +
       '<div class="ab-foot" id="ab-foot"></div>' +
       "</div>";
   }
+
+  /* Embed the live view of the CURRENT cloud browser (fresh per run). */
+  function setLive(url) {
+    url = String(url || "");
+    if (!url) return;
+    var vw = document.querySelector("#ab-viewwrap");
+    if (!vw) return;
+    var frame = vw.querySelector("#ab-live");
+    if (!frame) {
+      var boot = vw.querySelector("#ab-boot");
+      if (boot) boot.remove();
+      frame = document.createElement("iframe");
+      frame.id = "ab-live";
+      frame.className = "ab-live";
+      frame.setAttribute("allow", "clipboard-read; clipboard-write");
+      frame.allowFullscreen = true;
+      vw.insertBefore(frame, vw.querySelector("#ab-reconnect"));
+    }
+    if (frame.getAttribute("src") !== url) frame.setAttribute("src", url);
+  }
+  NB.agentBrowseSetLive = setLive; /* reusable by the Live voice pane */
 
   function openPanel() {
     var old = document.querySelector("#ab-panel");
@@ -110,6 +133,7 @@
     var root = document.querySelector("#modal-root");
     var wrap = document.createElement("div");
     wrap.id = "ab-panel";
+    if (NB.kernelMode && NB.kernelMode() !== "off") wrap.className = "kernel";
     wrap.innerHTML = panelHTML();
     (root || document.body).appendChild(wrap);
     wrap.querySelector("#ab-close").addEventListener("click", function () { wrap.remove(); });
@@ -132,7 +156,11 @@
       v = document.createElement("div");
       v.className = "ab-viewport";
       v.id = "ab-viewport";
-      panel.insertBefore(v, panel.querySelector("#ab-log"));
+      /* insert before the log INSIDE the wrap — #ab-log is a child of
+         .ab-wrap, not of #ab-panel (insertBefore requires that) */
+      var host = panel.querySelector(".ab-wrap") || panel;
+      var ref = host.querySelector("#ab-log");
+      if (ref) host.insertBefore(v, ref); else host.appendChild(v);
     }
     var url = opts.url || ("https://en.wikipedia.org/wiki/" + encodeURIComponent(String(p.title || "").replace(/ /g, "_")));
     var body = String(p.body != null ? p.body : p.summary || "").slice(0, 600);
@@ -234,11 +262,14 @@
         status("error");
       });
     }
-    log("kernel agent online — driving a real cloud browser", "");
-    /* the whole loop runs inside ONE run: tab opens now, closes when done */
+    log("kernel agent online — a fresh cloud browser is spinning up", "");
+    /* the whole loop runs inside ONE run: fresh session now, deleted when done */
     return NB.kernelAgent.run(function (d, klog) {
       return d.goto("about:blank").then(function () { return step(1, d); });
-    }, function (m, tone) { if (tone !== "ok") log(m, tone); });
+    }, function (m, tone) { if (tone !== "ok") log(m, tone); }, function (session) {
+      var url = session && (session.browser_live_view_url || session.live);
+      if (url) { setLive(url); status("cloud browser ready"); }
+    });
   }
 
   /* ===== Classic mode: CORS-open readers, no cloud browser ===== */
@@ -333,9 +364,10 @@
     var panel = openPanel();
     log("agent online — watching it work in real time", "");
     status("starting");
-    var kernelOn = NB.kernelMode && NB.kernelMode() !== "off" && NB.kernelAgent.available();
-    var job = kernelOn ? runKernel(q, panel) : runClassic(q, panel);
-    Promise.resolve(job).then(function (out) {
+    var kernelWanted = NB.kernelMode && NB.kernelMode() !== "off" && NB.kernelAgent.available();
+    var startRun = function (useKernel) {
+      var job = useKernel ? runKernel(q, panel) : runClassic(q, panel);
+      Promise.resolve(job).then(function (out) {
       running = false;
       var el = document.querySelector("#ab-panel");
       if (el && out && out.answer) {
@@ -348,7 +380,21 @@
         }
         status("done");
       }
-    }).catch(function () { running = false; });
+      }).catch(function () { running = false; });
+    };
+    if (!kernelWanted) { startRun(false); return; }
+    /* Kernel FIRST — always. The in-site readers only run when the
+       cloud browser can't be reached at all. */
+    NB.kernelAgent.ready().then(function (ok) {
+      if (ok) startRun(true);
+      else {
+        log("kernel unreachable — falling back to in-site readers", "err");
+        /* no live iframe ever arrived — drop the empty kernel viewport */
+        var vw = document.querySelector("#ab-viewwrap");
+        if (vw && !vw.querySelector("#ab-live")) vw.remove();
+        startRun(false);
+      }
+    });
   };
 
   /* Quiet variant for the ask flow: no panel, returns the final answer text

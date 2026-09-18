@@ -63,6 +63,17 @@
         '<div id="ai-env-out" class="ai-env"></div>' +
         '<p class="muted muted-xs">Runs fully client-side — the browser talks straight to NVIDIA. Only your question + relevant memory text leave the device.</p>' +
       '</section>' +
+      '<section class="panel"><h3>Kernel Browser</h3>' +
+        '<p class="muted">agentBrowse and Live voice drive a real cloud Chromium (Kernel). Every run spins up a <strong>fresh browser</strong> with the max timeout and deletes it when done — nothing sits idle. A built-in key is included; optionally paste your own from <a class="panel-link" href="https://onkernel.com" target="_blank" rel="noopener">onkernel.com</a> — it stays on this device.</p>' +
+        '<div class="row-between"><span>Mode</span><code id="kb-mode" class="key-preview"></code></div>' +
+        '<div class="row-between"><span>Key in use</span><code id="kb-key-preview" class="key-preview"></code></div>' +
+        '<div class="ai-key-row"><input id="kb-key-input" class="key-input" placeholder="Optional: your own Kernel key (sk_…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="ai-key-row">' +
+          '<button class="btn btn-primary btn-sm" id="kb-key-save">Save key</button>' +
+          '<button class="btn btn-outline btn-sm" id="kb-key-reset">Clear override</button>' +
+          '<button class="btn btn-outline btn-sm" id="kb-test">Check browser access</button></div>' +
+        '<div id="kb-test-out" class="ai-test-out"></div>' +
+      '</section>' +
       '<section class="panel"><h3>Data</h3>' +
         '<div class="row-between"><span>Export brain as JSON</span><button class="btn btn-outline btn-sm" id="set-export">Export</button></div>' +
         '<div class="row-between"><span>Import brain from JSON</span><button class="btn btn-outline btn-sm" id="set-import">Import</button></div>' +
@@ -144,6 +155,38 @@
       refreshEnv();
       testOut.className = "ai-test-out";
     });
+
+    /* ---------- Kernel cloud browser ---------- */
+    if (NB.getKernelKey) {
+      var kbMode = $("#kb-mode", root), kbPrev = $("#kb-key-preview", root), kbOut = $("#kb-test-out", root);
+      function kbRefresh() {
+        var env = NB.kernelEnv ? NB.kernelEnv() : { mode: "?", key: "?" };
+        kbMode.textContent = env.mode + (env.relay ? " (via relay)" : "");
+        kbPrev.textContent = env.key === "custom" ? "your own key" : "built-in key";
+      }
+      kbRefresh();
+      $("#kb-key-save", root).addEventListener("click", function () {
+        var v = $("#kb-key-input", root).value.trim();
+        if (!v) { toast("Paste a key first.", "err"); return; }
+        NB.setKernelKey(v);
+        $("#kb-key-input", root).value = "";
+        kbRefresh();
+        toast("Kernel key saved locally.");
+      });
+      $("#kb-key-reset", root).addEventListener("click", function () {
+        NB.setKernelKey("");
+        kbRefresh();
+        toast("Back to the built-in Kernel key.");
+      });
+      $("#kb-test", root).addEventListener("click", function () {
+        kbOut.textContent = "$ kernel --check … listing browser sessions…";
+        kbOut.className = "ai-test-out pending";
+        NB.kernelAgent.ready().then(function (ok) {
+          kbOut.textContent = ok ? "✓ Kernel reachable — cloud browser ready for agent runs." : "⚠ Kernel unreachable right now — agentBrowse will use the in-site readers.";
+          kbOut.className = "ai-test-out " + (ok ? "ok" : "err");
+        });
+      });
+    }
 
     $("#set-density", root).checked = prefs.compact;
     $("#set-motion", root).checked = prefs.reduceMotion;

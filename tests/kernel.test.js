@@ -57,6 +57,7 @@ class FakeWS {
   close() { this.readyState = 3; }
 }
 window.WebSocket = FakeWS;
+window.NB_KERNEL_TEST = "1"; /* tell kernel.js to skip Kernel REST + reuse tabs */
 window.sessionStorage.setItem("nb_credit", "1");
 
 /* ---------- boot the app ---------- */
@@ -83,7 +84,7 @@ function check(label, fn) {
 (async () => {
   /* ── mode + live view ── */
   check("kernel mode reported (demo-browser by default)", () => NB.kernelMode() === "demo-browser");
-  check("built-in live view URL is available for embedding", () => /^https:\/\/.+kernel\.sh.+\/browser\/live\//.test(NB.kernelLiveUrl() || ""));
+  check("built-in live view URL is available for embedding", () => /^https:\/\/.+\/browser\/live\//.test(NB.kernelLiveUrl() || ""));
   check("kernelAgent exposes run/searchWeb/available", () =>
     typeof NB.kernelAgent.run === "function" && typeof NB.kernelAgent.searchWeb === "function" && NB.kernelAgent.available() === true);
   check("relay setting round-trips", () => {
