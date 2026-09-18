@@ -68,6 +68,8 @@
         '<div class="row-between"><span>Mode</span><code id="kb-mode" class="key-preview"></code></div>' +
         '<div class="row-between"><span>Key in use</span><code id="kb-key-preview" class="key-preview"></code></div>' +
         '<div class="ai-key-row"><input id="kb-key-input" class="key-input" placeholder="Optional: your own Kernel key (sk_…)" autocomplete="off" spellcheck="false" /></div>' +
+        '<div class="ai-key-row"><input id="kb-relay-input" class="key-input" placeholder="Optional: Cloudflare relay URL (https://…workers.dev)" autocomplete="off" spellcheck="false" /></div>' +
+        '<p class="muted muted-xs">On GitHub Pages, Kernel\'s REST API blocks browser calls (no CORS) — deploy <code>kernel-relay.js</code> to Cloudflare Workers (free, 2 min — see file header) and paste the URL above. Without it, agentBrowse falls back to in-site readers. The CDP + live view still connect directly.</p>' +
         '<div class="ai-key-row">' +
           '<button class="btn btn-primary btn-sm" id="kb-key-save">Save key</button>' +
           '<button class="btn btn-outline btn-sm" id="kb-key-reset">Clear override</button>' +
@@ -182,10 +184,26 @@
         kbOut.textContent = "$ kernel --check … listing browser sessions…";
         kbOut.className = "ai-test-out pending";
         NB.kernelAgent.ready().then(function (ok) {
-          kbOut.textContent = ok ? "✓ Kernel reachable — cloud browser ready for agent runs." : "⚠ Kernel unreachable right now — agentBrowse will use the in-site readers.";
-          kbOut.className = "ai-test-out " + (ok ? "ok" : "err");
+          if (ok) {
+            kbOut.textContent = "✓ Kernel reachable — cloud browser ready for agent runs.";
+            kbOut.className = "ai-test-out ok";
+          } else {
+            kbOut.textContent = "⚠ Kernel REST unreachable (CORS) — deploy kernel-relay.js to Cloudflare Workers and paste its URL above, or agentBrowse will use the in-site readers.";
+            kbOut.className = "ai-test-out err";
+          }
         });
       });
+      /* relay input — same pattern as the AI relay field */
+      var kbRelayInput = $("#kb-relay-input", root);
+      if (kbRelayInput) {
+        kbRelayInput.value = NB.getKernelRelay ? NB.getKernelRelay() : "";
+        kbRelayInput.addEventListener("change", function () {
+          var v = kbRelayInput.value.trim();
+          if (!v) { NB.setKernelRelay(""); toast("Kernel relay cleared — direct mode."); }
+          else { NB.setKernelRelay(v); toast("Kernel relay saved — it will be used for session REST."); }
+          kbRefresh();
+        });
+      }
     }
 
     $("#set-density", root).checked = prefs.compact;
