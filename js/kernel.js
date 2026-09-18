@@ -57,10 +57,18 @@
       method: method,
       headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
       signal: ctrl && ctrl.signal,
+      /* Kernel's REST API sends NO Access-Control-Allow-Origin header, so a
+         browser fetch from any other origin is blocked by CORS no matter
+         what. Browsers relax this ONLY in “no-cors” mode — which still
+         completes and works fine for fire-and-forget DELETES (the response
+         body is opaque, we never read it). Real data calls (create/list)
+         go through CORS-free transports — see kernelEnsure(). */
+      mode: method === "DELETE" ? "no-cors" : "cors",
     };
     if (body) opts.body = JSON.stringify(body);
     return fetch(API + path, opts).then(function (r) {
       if (timer) clearTimeout(timer);
+      if (method === "DELETE") return {}; /* opaque response — assume success */
       return r.json().catch(function () { return {}; }).then(function (body) {
         if (!r.ok) {
           var err = new Error((body && body.message) || "kernel api " + r.status);
