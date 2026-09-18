@@ -115,6 +115,144 @@
   };
 
   /* ---------- brain context ---------- */
+  /* ============================================================
+     AGENT LAYER — the AI can now operate the brain itself.
+     The model replies with optional ACTION lines (JSON ops) followed
+     by SAID (the user-facing reply). Ops are applied locally to the
+     store, then a second model pass writes the final summary.
+     ============================================================ */
+  var KIND_KEYS = { note: "notes", notes: "notes", idea: "ideas", ideas: "ideas", goal: "goals", goals: "goals", knowledge: "knowledge" };
+
+  function validCat(c) { return NB.CATEGORIES.indexOf(c) !== -1 ? c : null; }
+  function validTopic(t) { return NB.TOPICS.indexOf(t) !== -1 ? t : null; }
+  function validIdeaStatus(s) { var ok = ["New", "Exploring", "Building", "Completed"]; return ok.indexOf(s) !== -1 ? s : null; }
+  function validGoalStatus(s) { var ok = ["active", "paused", "completed"]; return ok.indexOf(s) !== -1 ? s : null; }
+
+  function findItem(kindKey, match) {
+    var list = NB.getStore()[kindKey] || [];
+    var m = String(match || "").toLowerCase().trim();
+    if (!m) return null;
+    var exact = list.filter(function (x) { return String(x.title || "").toLowerCase().trim() === m; });
+    if (exact.length) return exact[0];
+    var part = list.filter(function (x) { return String(x.title || "").toLowerCase().indexOf(m) !== -1; });
+    return part.length ? part[0] : null;
+  }
+
+  /* Apply parsed agent ops. Returns human-readable result lines. */
+  function applyOps(ops) {
+    var results = [];
+    ops.slice(0, 5).forEach(function (op) {
+      try {
+        if (!op || typeof op !== "object" || !op.op) return;
+        var kind = KIND_KEYS[String(op.kind || op.type || "").toLowerCase()] ||
+          KIND_KEYS[String(op.op || "").replace(/^add_/, "").toLowerCase()]; /* add_idea → ideas */
+        var title = String(op.title || op.match || "").trim();
+        /* add_note/add_idea/… carry the kind in the op name — the branches
+           below default it; only a bare "add" with no kind is dropped */
+        if (!kind && op.op === "add") { results.push("add needs a kind (note/idea/goal/knowledge)"); return; }
+        if (op.op === "add" || /^add_(note|idea|goal|knowledge)$/.test(op.op)) {
+          if (!kind) kind = "notes";
+          var t = String(op.title || "").trim() || String(op.body || op.text || op.content || "").trim().slice(0, 60);
+          if (!t || t.length < 2) { results.push("skipped an unnamed item"); return; }
+          var d = { title: t.slice(0, 120), body: String(op.body || op.text || op.content || "").trim() };
+          if (kind === "notes") { d.category = validCat(op.category) || "General"; NB.addNote(d); }
+          else if (kind === "ideas") { d.category = validCat(op.category) || "General"; d.status = validIdeaStatus(op.status) || "New"; NB.addIdea(d); }
+          else if (kind === "goals") { d.progress = Math.max(0, Math.min(100, parseInt(op.progress, 10) || 0)); d.status = validGoalStatus(op.status) || "active"; if (/^\d{4}-\d{2}-\d{2}$/.test(String(op.deadline || ""))) d.deadline = String(op.deadline); NB.addGoal(d); }
+          else { d.topic = validTopic(op.topic) || "AI"; d.source = String(op.source || "").slice(0, 80); NB.addKnowledge(d); }
+          results.push("added " + kind.slice(0, -1) + " \u201c" + d.title + "\u201d");
+        } else if (op.op === "update" || op.op === "update_note" || op.op === "update_idea" || op.op === "update_goal" || op.op === "update_knowledge") {
+          if (!kind) kind = "notes";
+          var item = findItem(kind, op.match || op.title);
+          if (!item) { results.push("couldn\u2019t find " + kind.slice(0, -1) + " \u201c" + (op.match || op.title) + "\u201d"); return; }
+          var patch = {};
+          if (op.newTitle || op.title) patch.title = String(op.newTitle || op.title).slice(0, 120);
+          if (op.body != null && op.body !== "") patch.body = String(op.body);
+          if (op.category && validCat(op.category)) patch.category = op.category;
+          if (op.topic && validTopic(op.topic)) patch.topic = op.topic;
+          if (op.status) { if (kind === "ideas" && validIdeaStatus(op.status)) patch.status = op.status; if (kind === "goals" && validGoalStatus(op.status)) patch.status = op.status; }
+          if (op.progress != null) patch.progress = Math.max(0, Math.min(100, parseInt(op.progress, 10) || 0));
+          if (/^\d{4}-\d{2}-\d{2}$/.test(String(op.deadline || ""))) patch.deadline = String(op.deadline);
+          if (op.source != null) patch.source = String(op.source).slice(0, 80);
+          if (!Object.keys(patch).length) { results.push("nothing to change on \u201c" + item.title + "\u201d"); return; }
+          ({ notes: NB.updateNote, ideas: NB.updateIdea, goals: NB.updateGoal, knowledge: NB.updateKnowledge })[kind](item.id, patch);
+          results.push("updated " + kind.slice(0, -1) + " \u201c" + item.title + "\u201d");
+        } else if (op.op === "delete" || op.op === "remove" || op.op === "delete_note" || op.op === "delete_idea" || op.op === "delete_goal" || op.op === "delete_knowledge") {
+          if (!kind) kind = "notes";
+          var victim = findItem(kind, op.match || op.title);
+          if (!victim) { results.push("couldn\u2019t find " + kind.slice(0, -1) + " \u201c" + (op.match || op.title) + "\u201d"); return; }
+          ({ notes: NB.removeNote, ideas: NB.removeIdea, goals: NB.removeGoal, knowledge: NB.removeKnowledge })[kind](victim.id);
+          results.push("deleted " + kind.slice(0, -1) + " \u201c" + victim.title + "\u201d");
+        } else if (op.op === "pin" || op.op === "unpin" || op.op === "toggle_pin") {
+          if (!kind) { results.push("pin needs a kind (note/idea/goal/knowledge)"); return; }
+          var target = findItem(kind, op.match || op.title);
+          if (!target) { results.push("couldn\u2019t find " + kind.slice(0, -1) + " \u201c" + (op.match || op.title) + "\u201d"); return; }
+          NB.togglePin(kind.slice(0, -1) === "knowledge" ? "knowledge" : kind.slice(0, -1), target.id);
+          results.push((target.pinned ? "unpinned" : "pinned") + " \u201c" + target.title + "\u201d");
+        } else {
+          results.push("skipped unknown op " + op.op);
+        }
+      } catch (e) { results.push("one action failed"); }
+    });
+    return results;
+  }
+
+  /* Parse the model's reply for ACTION blocks + SAID.
+     Models often put several ops (or ACTION + SAID) on ONE line, so
+     this scans for ACTION followed by a balanced {...} anywhere in the
+     text instead of trusting line breaks. */
+  function parseAgentReply(text) {
+    var s = String(text || ""), ops = [];
+    var re = /ACTION\s*\{/gi, blocks = [];
+    var m;
+    while ((m = re.exec(s)) !== null) {
+      var start = s.indexOf("{", m.index), depth = 0, end = -1;
+      for (var i = start; i < s.length; i++) {
+        if (s.charAt(i) === "{") depth++;
+        else if (s.charAt(i) === "}") { depth--; if (!depth) { end = i; break; } }
+      }
+      if (end === -1) break;
+      blocks.push(s.slice(start, end + 1));
+      re.lastIndex = end + 1;
+    }
+    blocks.forEach(function (b) {
+      try { ops.push(JSON.parse(b)); } catch (e) {
+        try { ops.push(JSON.parse(b.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"))); } catch (e2) {}
+      }
+    });
+    /* strip ACTION blocks, then keep whatever follows the last SAID: */
+    var residual = s;
+    blocks.forEach(function (b) { residual = residual.replace(b, ""); });
+    residual = residual.replace(/ACTIONS?:?/gi, " ");
+    var parts = residual.split(/SAID:?\s*/i);
+    var said = (parts.length > 1 ? parts[parts.length - 1] : residual).replace(/\s+/g, " ").trim();
+    return { ops: ops, said: said };
+  }
+
+  function agentSystemPrompt(withTools) {
+    var base =
+      "You are NeuroBot, a personal second-brain assistant. " +
+      "STEP 1 — scan the MEMORIES provided by the user. If they contain anything relevant, answer from them and build on it. " +
+      "STEP 2 — if the memories don't cover it, answer from your own general knowledge like a normal helpful assistant (never say there is no relevant memory; just answer). " +
+      "Be concise (max ~100 words). Plain text only, no markdown.";
+    if (!withTools) return base;
+    return base +
+      "\n\nYou can also CHANGE the user's brain using these TOOLS (use 1-3 only when the user clearly asks to create, add, remember, update, complete, delete or organize something):" +
+      "\nACTION {\"op\":\"add_note\",\"title\":\"...\",\"body\":\"...\",\"category\":\"General|AI|Engineering|Product|Business|Learning|Psychology\"}" +
+      "\nACTION {\"op\":\"add_idea\",\"title\":\"...\",\"body\":\"...\",\"category\":\"...\",\"status\":\"New|Exploring|Building|Completed\"}" +
+      "\nACTION {\"op\":\"add_goal\",\"title\":\"...\",\"body\":\"...\",\"progress\":0,\"deadline\":\"YYYY-MM-DD or omitted\",\"status\":\"active\"}" +
+      "\nACTION {\"op\":\"add_knowledge\",\"title\":\"...\",\"body\":\"...\",\"topic\":\"AI|Programming|Science|Business|Education\",\"source\":\"...\"}" +
+      "\nACTION {\"op\":\"update\",\"kind\":\"note|idea|goal|knowledge\",\"match\":\"exact existing title\",\"body\":\"new text\"} — only include fields that change; goal also accepts progress (0-100) and status active|paused|completed" +
+      "\nACTION {\"op\":\"delete\",\"kind\":\"note|idea|goal|knowledge\",\"match\":\"exact existing title\"}" +
+      "\nACTION {\"op\":\"pin\",\"kind\":\"note|idea|goal|knowledge\",\"match\":\"title\"}" +
+      "\nRules: match must copy an EXISTING title from MEMORIES for update/delete/pin. Derive deadlines from today's date if the user says things like 'next month'. " +
+      "Only emit ACTION when the user EXPLICITLY asks to save/remember/create/add/update/complete/delete/organize something. " +
+      "If the user is only asking a question or chatting, NEVER emit ACTION — answering a question is not a reason to save anything. " +
+      "Do not save general-knowledge facts unless asked to remember them. " +
+      "Reply format — call tools first, then ALWAYS end with a SAID line:" +
+      "\nACTION {\"op\":\"add_note\",\"title\":\"Dentist\",\"body\":\"Friday 3pm\",\"category\":\"General\"}\nSAID: Saved — dentist Friday 3pm is in your notes." +
+      "\nIf nothing needs changing, reply with ONLY a SAID line.";
+  }
+
   function brainContext() {
     var s = NB.getStore(), lines = [];
     s.knowledge.forEach(function (k) { lines.push("- [knowledge/" + k.topic + "] " + k.title + ": " + k.body + " (source: " + k.source + ")"); });
@@ -124,19 +262,17 @@
     return lines.join("\n");
   }
 
-  function messagesFor(q) {
-    return [
-      {
-        role: "system",
-        content:
-          "You are NeuroBot, a personal second-brain assistant. " +
-          "STEP 1 — scan the MEMORIES provided by the user. If they contain anything relevant to the question, answer from them and build on it. " +
-          "STEP 2 — if the memories don't cover it, answer from your own general knowledge like a normal helpful assistant (never say there is no relevant memory; just answer). " +
-          "You may blend both: what the user's brain says + what you know. " +
-          "Be concise (max ~100 words). Plain text only, no markdown formatting.",
-      },
-      { role: "user", content: "MEMORIES (" + NB.totalItems() + " items):\n" + brainContext() + "\n\nQUESTION: " + q },
-    ];
+  function messagesFor(q, opts) {
+    opts = opts || {};
+    var msgs = [{ role: "system", content: agentSystemPrompt(opts.tools !== false) }];
+    (opts.history || []).slice(-6).forEach(function (h) {
+      if (h && h.role && h.text) msgs.push({ role: h.role, content: String(h.text).slice(0, 400) });
+    });
+    msgs.push({
+      role: "user",
+      content: "MEMORIES (" + NB.totalItems() + " items):\n" + (brainContext() || "(the brain is empty)") + "\n\nTODAY: " + new Date().toISOString().slice(0, 10) + "\n\nQUESTION: " + q,
+    });
+    return msgs;
   }
 
   /* ---------- low-level fetch with timeout ---------- */
@@ -346,6 +482,9 @@
     return m;
   }
 
+  /* Agent internals — exposed for offline tests. */
+  NB.__agent = { parseAgentReply: parseAgentReply, applyOps: applyOps, findItem: findItem };
+
   /* Diagnostic used by Settings → AI Connection and terminal `aitest`. */
   NB.testAI = function () {
     if (callCount >= ASK_LIMIT) {
@@ -367,13 +506,25 @@
     });
   };
 
-  NB.askAI = function (question) {
+  /* Second model pass: turns raw agent output into a clean user reply. */
+  function summarizeActions(question, rawReply, results) {
+    var msgs = [
+      { role: "system", content: "You are NeuroBot. You just performed actions in the user's second brain. Report exactly what was done in at most 30 words, mentioning item titles. If something failed or wasn't found, say so briefly. Plain text, no markdown, no lists." },
+      { role: "user", content: "REQUEST: " + question + "\n\nRESULTS:\n- " + results.join("\n- ") + "\n\nYour raw reply was: " + rawReply.slice(0, 300) + "\n\nWrite the user-facing reply now." },
+    ];
+    return postAI(msgs, 400).then(function (r) {
+      var t = r && r.ok ? extractAnswer(r.data) : "";
+      return t || results.join(" · ");
+    }).catch(function () { return results.join(" · "); });
+  }
+
+  NB.askAI = function (question, opts) {
     if (callCount >= ASK_LIMIT) {
       return Promise.reject(new Error("Demo limit reached (" + ASK_LIMIT + " asks per session). Refresh the page to reset."));
     }
     callCount++;
-    var msgs = messagesFor(question);
-    return postAI(msgs, 900).then(function (r) {
+    var msgs = messagesFor(question, opts);
+    return postAI(msgs, 1200).then(function (r) {
       if (!r || !r.ok) {
         var msg = upstreamMsg(r, "HTTP " + (r ? r.status : "?"));
         lastError = msg;
@@ -385,7 +536,18 @@
         throw new Error("AI returned an empty response — try rephrasing.");
       }
       lastError = "";
-      return text;
+      /* agent path: apply any ACTION ops, then summarize what happened */
+      var parsed = parseAgentReply(text);
+      if (parsed.ops.length) {
+        var results = applyOps(parsed.ops);
+        if (results.length) {
+          /* refresh the visible view unless a chat is mid-conversation
+             (dashboard bubbles live in the view — don't wipe them) */
+          if (!NB.suppressRerender) window.dispatchEvent(new Event("hashchange"));
+          return summarizeActions(question, text, results);
+        }
+      }
+      return parsed.said || text;
     }).catch(function (err) {
       if (err && err.message && err.message.indexOf("Demo limit") === 0) throw err;
       throw new Error(friendly(err));
@@ -393,6 +555,7 @@
   };
 
   /* Ask modal UI (shared by palette + ✦ Ask buttons) */
+  var askHistory = [];
   NB.openAskModal = function (preFill) {
     var modal = NB.openModal({ subtitle: "$ neurobot ask --ai", title: "Ask your brain" });
     modal.body.innerHTML =
@@ -415,7 +578,8 @@
       var out = modal.body.querySelector("#ask-out");
       out.style.display = "block";
       out.innerHTML = '<div class="ask-loading">✦ Thinking with ' + NB.totalItems() + " memories…</div>";
-      NB.askAI(q).then(function (answer) {
+      NB.askAI(q, { history: askHistory }).then(function (answer) {
+        askHistory.push({ role: "user", text: q }, { role: "assistant", text: answer });
         go.disabled = false;
         go.textContent = "✦ Ask";
         out.innerHTML = '<div class="ask-answer">' + NB.esc(answer) + "</div>";

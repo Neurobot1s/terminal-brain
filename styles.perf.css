@@ -346,3 +346,9 @@ textarea:focus-visible, [tabindex]:focus-visible {
 /* sidebar links: icon nudges forward on hover */
 .nav a .nav-ico, .nav a::before { display: inline-block; transition: transform .16s var(--ease); }
 .nav a:hover::before { transform: translateX(2px); }
+
+/* mic dictation active on the dashboard ask box */
+.ask-mic.rec {
+  background: rgba(248,113,113,.18); border-color: rgba(248,113,113,.5);
+  animation: pulse 1.1s infinite;
+}

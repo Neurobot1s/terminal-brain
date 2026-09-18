@@ -128,16 +128,19 @@
       b.scrollIntoView({ block: "nearest", behavior: "smooth" });
       return b;
     }
+    var chat = []; /* conversation memory — follow-ups understand context */
     function send() {
       var input = $("#ask-input", root);
       var q = input.value.trim();
       if (!q) return;
+      NB.suppressRerender = true; /* agent writes must not wipe this chat */
       input.value = "";
       bubble("user", q);
       var thinking = bubble("ai think", "✦ thinking with " + totalItems() + " memories…");
       var sendBtn = $("#ask-send", root);
       sendBtn.disabled = true;
-      NB.askAI(q).then(function (answer) {
+      NB.askAI(q, { history: chat }).then(function (answer) {
+        chat.push({ role: "user", text: q }, { role: "assistant", text: answer });
         thinking.className = "bubble ai";
         thinking.textContent = answer;
       }).catch(function (err) {
@@ -145,12 +148,36 @@
         thinking.textContent = "⚠ " + (err.message || String(err));
       }).then(function () {
         sendBtn.disabled = false;
+        NB.suppressRerender = false;
         input.focus();
       });
     }
     $("#ask-send", root).addEventListener("click", send);
     $("#ask-input", root).addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
-    $("#ask-mic", root).addEventListener("click", function () { toast("Voice input is a visual demo for now.", "warn"); });
+    /* mic button = real dictation (browser speech recognition) */
+    var dictating = false;
+    $("#ask-mic", root).addEventListener("click", function () {
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { toast("This browser has no speech recognition — try Chrome or Edge.", "warn"); return; }
+      if (dictating) { toast("Already listening…"); return; }
+      try {
+        var rec = new SR();
+        var micBtn = $("#ask-mic", root), field = $("#ask-input", root);
+        rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false;
+        dictating = true;
+        field.value = "";
+        micBtn.classList.add("rec");
+        rec.onresult = function (e) {
+          var t = "";
+          for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+          field.value = t;
+        };
+        rec.onend = function () { dictating = false; micBtn.classList.remove("rec"); field.focus(); };
+        rec.onerror = function () { dictating = false; micBtn.classList.remove("rec"); };
+        rec.start();
+        toast("Listening… speak now");
+      } catch (e) { dictating = false; toast("Could not start the microphone.", "warn"); }
+    });
     $("#nv-try", root).addEventListener("click", function () { if (NB.openNeuroVision) NB.openNeuroVision(); });
     return root;
   };

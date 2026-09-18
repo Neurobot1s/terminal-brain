@@ -6,7 +6,16 @@
 ## Current state (2026-09-17) — ALL GREEN
 All 5 test suites pass: `boot`, `routes`, `interact` (×3 stable), `live` (28 checks), `ai`. 23/23 E2E at the production origin (jsdom harness `/tmp/nb-e2e.js` — temp, not in repo). All 12 JS files syntax-clean. Nothing pending.
 
-## Latest round (night)
+## Latest round — AI AGENT (writes to the brain)
+- **The AI now ACTS, not just answers.** System prompt teaches an `ACTION {"op":...}` protocol; model replies are parsed (brace-matched, one-line-safe), applied to the store, then a **second model pass** summarizes what was done (≤30 words, mentions titles).
+- Ops: `add_note/add_idea/add_goal/add_knowledge` (kind also derived from op name), `update` (partial patch by exact-title match), `delete`, `pin`. All values sanitized (enum statuses/topics/categories, progress clamped 0–100, ISO-or-no deadline, ≤5 ops).
+- Guardrails in prompt: only emit ACTION on explicit save/create/update/delete intent; questions and general knowledge never write. Verified live: "remember my dentist…" → note written; "what do I have about dentist…" → answered from memory; "who wrote 1984?" → answered, no write.
+- `NB.askAI(question, opts)` now takes `opts.history` (last 6 turns) — conversation memory wired into dashboard ask box, ask modal, and Live voice (`liveChat`). Dashboard chat sets `NB.suppressRerender` during a turn so agent writes don't wipe the open chat.
+- Dashboard mic button = **real dictation** now (browser SR → fills input; `.rec` pulse style).
+- `NB.__agent` exports parseAgentReply/applyOps/findItem for tests; `tests/agent.test.js` (21 offline checks, jsdom) + live network probe all pass.
+- Gotchas fixed while building: parser must brace-match (models put ACTION+SAID on one line); add-branch regex `/^add_(note|idea|goal|knowledge)$/`; kind defaults from op name.
+
+## Previous round (night)
 - **Device TTS rebuilt** (voice.js `browserSpeak`): 120ms settle after `cancel()` (Chrome drops the next utterance otherwise — the silent-answer bug), voice picking (best en voice by name), 180-char chunking with queued playback, per-chunk watchdog for lost `onend`, global `speakToken` so Stop/cancel kills queued chunks.
 - **Voice-catch fixes**: echo guard narrowed — only filters when the utterance is a strong prefix (>18 chars) or long fragment (>30) of NeuroBot's last answer, so short replies ("nice", "cool") always pass; repeat guard now 90s windowed + exempt for <6-char words; VAD "speaking" also counts recent SR activity (quiet mics get the countdown); 7s no-speech round bail-out; starter chips ("summarize my notes" etc.) ask without the mic.
 - **UI polish** (styles.perf.css §7): orb aura animation, status-pill dot, starter chips, ask-box focus glow + hover lift, stat-card accent rail, sidebar icon nudge.

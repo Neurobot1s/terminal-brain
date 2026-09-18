@@ -637,6 +637,7 @@
     var latestPartial = "";
     var said = {};            /* global dedupe: one utterance → one bubble, ever */
     var lastSpokeText = "";   /* what NeuroBot last said out loud (echo guard) */
+    var liveChat = [];        /* conversation memory for follow-ups */
 
     function esc(s) { return NB.esc(s); }
 
@@ -882,7 +883,8 @@
       setStatus("Thinking with your memories…");
       var pending = bubble("ai", "…");
       pending.classList.add("think");
-      NB.askAI(question).then(function (answer) {
+      NB.askAI(question, { history: liveChat }).then(function (answer) {
+        liveChat.push({ role: "user", text: question }, { role: "assistant", text: answer });
         pending.classList.remove("think");
         pending.querySelector(".live-said").textContent = answer;
         thread.scrollTop = thread.scrollHeight;
