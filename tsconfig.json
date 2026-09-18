@@ -1,10 +1,17 @@
 {
   // NeuroBot is a pure vanilla JS/CSS/HTML app — there is intentionally no
-  // TypeScript source. This empty project config exists only so the platform's
-  // generic `tsc -b --noEmit` check has a valid tsconfig to run against.
-  // It compiles nothing and is NOT part of the deployed site (skip on htdocs).
+  // TypeScript app source. This config exists only so the platform's generic
+  // `tsc -b --noEmit` check has a valid tsconfig to run against. It typechecks
+  // the template's integration helper and is NOT part of the deployed site
+  // (skip on htdocs).
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2020",
+    "skipLibCheck": true,
+    "strict": false,
+    "types": ["node"]
   },
-  "files": []
+  "include": ["src/**/*.ts"]
 }
