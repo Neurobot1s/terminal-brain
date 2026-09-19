@@ -191,12 +191,48 @@
   function foot(t) { var f = document.querySelector("#ab-foot"); if (f) f.textContent = t; }
 
   /* ---------- the agent loop ---------- */
-  var MAX_STEPS = 7;
+  var MAX_STEPS = 9;
+
+  /* when the loop ends without an explicit ANSWER — or the model emits an
+     unclear step — compose the best answer from everything gathered so the
+     user always gets the retrieved info, never a dead stop. */
+  function bestEffortAnswer(query, steps, lastPage) {
+    if (!steps.length && !lastPage) return Promise.resolve();
+    log("composing the answer from the gathered research", "act");
+    var gathered = steps.join("\n").slice(0, 6000) +
+      (lastPage ? "\n\nFULL TEXT of the last page [" + (lastPage.title || "untitled") + "]:\n" + String(lastPage.text || "").slice(0, 3000) : "");
+    return think(
+      "You are agentBrowse. Answer the user's question using ONLY the gathered research below. " +
+      "ALWAYS reply in English. 2-6 sentences, concrete facts and numbers, plain text, no markdown. " +
+      "If the research is insufficient, say what was found and what is missing.",
+      "QUESTION: " + query + "\n\nRESEARCH GATHERED:\n" + gathered,
+      700
+    ).then(function (ans) {
+      var t = String(ans || "").trim();
+      if (!t) throw new Error("empty");
+      log("ANSWER: " + t.slice(0, 220), "ok");
+      status("done");
+      foot("");
+      return { answer: t };
+    }).catch(function () {
+      /* model unavailable — surface the raw research so the run still has value */
+      var raw = lastPage
+        ? (lastPage.title ? lastPage.title + " — " : "") + String(lastPage.text || "").replace(/\s+/g, " ").trim().slice(0, 400)
+        : steps.join(" · ").slice(0, 400);
+      if (raw) { log("ANSWER (raw research): " + raw, "ok"); status("done"); foot(""); return { answer: raw }; }
+    });
+  }
 
   /* ===== Kernel mode: the agent drives a REAL cloud browser =====
-     ONE fresh tab per run; the tab is closed the moment the run ends. */
+     ONE fresh session per run; DELETED the moment the run ends (success,
+     error, or stop). Pages are read via rich extraction (content container,
+     noise removal, lazy-load sweep) so the agent actually RETRIEVES the
+     info instead of a 150-char nav-menu sliver. */
   function runKernel(query, panel) {
-    var steps = [];
+    var steps = [], lastPage = null;
+    var K = (window.NB && NB.__kernelInternals) || {};
+    var extract = K.extractPageText || function (d2, m) { return d2.text("body").then(function (t) { return { title: "", url: "", text: String(t || "").slice(0, m || 3600) }; }); };
+    var sweep = K.sweepPage || function () { return Promise.resolve(); };
     function step(n, d) {
       if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
       status("step " + n + "/" + MAX_STEPS);
@@ -217,7 +253,7 @@
         220
       ).then(function (raw) {
         var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|ANSWER)\s*:?\s*([\s\S]+)$/i);
-        if (!m) { log("unclear model step — stopping", "err"); status("error"); return; }
+        if (!m) { log("model step unclear — answering from what was gathered", "warn"); return bestEffortAnswer(query, steps, lastPage); }
         var action = m[1].toUpperCase(), arg = m[2].trim();
         if (action === "ANSWER") {
           log("ANSWER: " + arg, "ok");
@@ -231,9 +267,9 @@
           return d.goto("https://duckduckgo.com/?q=" + encodeURIComponent(arg)).then(function () {
             return sleep(800);
           }).then(function () { return d.text("#links"); }).then(function (t) {
-            t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 1200);
+            t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 2400);
             if (!t) throw new Error("empty results");
-            steps.push("SEARCH “" + arg + "” → " + t.slice(0, 150));
+            steps.push("SEARCH “" + arg + "” → " + t.slice(0, 500));
             return sleep(700).then(function () { return step(n + 1, d); });
           }).catch(function (e) {
             log("search failed (" + (e.message || "error") + ") — trying direct step", "err");
@@ -242,14 +278,17 @@
         }
         if (action === "OPEN" || action === "READ") {
           var url = /^(https?:)?\/\//.test(arg) ? arg : "https://" + arg.replace(/^\/+/, "");
-          log("opening " + url, "act");
+          log((action === "READ" ? "reading " : "opening ") + url, "act");
           foot("cloud browser → " + url.replace(/^https?:\/\//, "").slice(0, 40));
-          return d.goto(url).then(function () { return sleep(600); })
-            .then(function () { return d.text("body"); })
-            .then(function (t) {
-              t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 1500);
-              if (!t) throw new Error("empty page");
-              steps.push((action === "OPEN" ? "OPEN " : "READ ") + url + " → " + t.slice(0, 150));
+          return d.goto(url).then(function () { return sleep(500); })
+            .then(function () { return sweep(d); })
+            .then(function () { return extract(d, 3600); })
+            .then(function (p) {
+              if (!p || !String(p.text || "").trim()) throw new Error("empty page");
+              lastPage = p;
+              var flat = String(p.text || "").replace(/\s+/g, " ").trim();
+              steps.push("READ " + (p.url || url) + " [" + (p.title || "untitled") + "] → " + flat.slice(0, 500));
+              showPage({ title: p.title || url, body: flat.slice(0, 600) }, { url: p.url || url });
               return sleep(700).then(function () { return step(n + 1, d); });
             })
             .catch(function (e) {
@@ -265,7 +304,11 @@
     log("kernel agent online — a fresh cloud browser is spinning up", "");
     /* the whole loop runs inside ONE run: fresh session now, deleted when done */
     return NB.kernelAgent.run(function (d, klog) {
-      return d.goto("about:blank").then(function () { return step(1, d); });
+      return d.goto("about:blank").then(function () { return step(1, d); }).then(function (out) {
+        /* loop ended without an explicit ANSWER — still deliver the research */
+        if (out && out.answer) return out;
+        return bestEffortAnswer(query, steps, lastPage);
+      });
     }, function (m, tone) { if (tone !== "ok") log(m, tone); }, function (session) {
       var url = session && (session.browser_live_view_url || session.live);
       if (url) { setLive(url); status("cloud browser ready"); }

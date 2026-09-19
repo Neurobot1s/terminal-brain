@@ -344,6 +344,46 @@
   Cdp.prototype.onEvent = function (h) { this.evHandlers.push(h); };
   Cdp.prototype.close = function () { try { this.ws.close(); } catch (e) {} };
 
+  /* ---------- rich page-text extraction (agent retrieval) ----------
+     d.text("body") grabs nav/menu/footer noise and is capped small, so the
+     agent often "can't retrieve the info" it just opened. This extractor
+     prefers real content containers, scrolls the page to trigger lazy
+     content, and returns much more text. */
+  function extractPageText(driver, maxChars) {
+    maxChars = maxChars || 3600;
+    return driver.eval(
+      "(function(){" +
+      "function clean(s){return String(s||'').replace(/[\\t\\r]+/g,' ').replace(/\\n{3,}/g,'\\n\\n').replace(/[ \\u00a0]{2,}/g,' ').trim();}" +
+      "var CAND=['main','article','[role=\"main\"]','#content','.post-content','.entry-content','.markdown-body','.prose','.article-body','#__next','body'];" +
+      "var host=null;" +
+      "for(var i=0;i<CAND.length;i++){var e=document.querySelector(CAND[i]);if(e&&clean(e.innerText).length>240){host=e;break;}}" +
+      "if(!host)host=document.body;" +
+      "var kill='nav,header,footer,aside,script,style,noscript,svg,form,iframe,.sidebar,#sidebar,.cookie,.banner,[aria-hidden=\"true\"]';" +
+      "var clone=host.cloneNode(true);" +
+      "try{clone.querySelectorAll(kill).forEach(function(n){n.remove();});}catch(e2){}" +
+      "var h1=(document.querySelector('h1')||{}).innerText||'';" +
+      "var text=clean(clone.innerText);" +
+      "if(h1&&text.indexOf(clean(h1))!==0)text=clean(h1)+'\\n'+text;" +
+      "return {title:document.title||'',url:location.href,text:text.slice(0," + maxChars + ")};" +
+      "})()"
+    ).then(function (r) {
+      if (r && r.exceptionDetails) throw new Error("page read error");
+      return (r && r.result && r.result.value) || { title: "", url: "", text: "" };
+    });
+  }
+
+  /* scroll the page top→bottom→top so lazy-loaded content renders
+     before extraction (most long articles load below the fold) */
+  function sweepPage(driver) {
+    return driver.eval(
+      "(function(){" +
+      "var step=Math.floor(window.innerHeight*0.85),d=0;" +
+      "var t=setInterval(function(){d+=step;if(d>=document.body.scrollHeight){clearInterval(t);window.scrollTo(0,0);}" +
+      "else{window.scrollTo(0,d);}},140);" +
+      "return true;})()"
+    ).catch(function () {}).then(function () { return sleep(1300); });
+  }
+
   /* ---------- driver: one fresh TAB on a cloud browser ---------- */
   var TAB_REUSE = false; /* tests flip this to skip real sockets + transport */
 
@@ -557,6 +597,8 @@
               return sleep(400).then(function () { return runManaged(job, log, onSession, attempt + 1); });
             });
           }
+          /* no more retries — OUR session must never sit idle */
+          if (session.__mine) deleteSession(key, session.session_id);
           throw err;
         });
       });
@@ -678,6 +720,20 @@
         });
       }, log);
     },
+
+    /* read a URL through the cloud browser — rich extraction + lazy-load
+       sweep; resolves { title, url, text }. Used by agentBrowse/Live. */
+    readPage: function (url, log) {
+      return NB.kernelAgent.run(function (d, log2) {
+        return d.goto(url).then(function () { return sleep(500); })
+          .then(function () { return sweepPage(d); })
+          .then(function () { return extractPageText(d, 3600); })
+          .then(function (p) {
+            if (!p || !String(p.text || "").trim()) throw new Error("empty page");
+            return p;
+          });
+      }, log);
+    },
   };
 
   /* Settings hooks */
@@ -708,5 +764,5 @@
 
   /* tests */
   var readyPromise = null, readyAt = 0;
-  NB.__kernelInternals = { Cdp: Cdp, openDriver: openDriver, setTabReuse: function (v) { TAB_REUSE = v; }, API: API, MCP_URL: MCP_URL, MAX_TIMEOUT_S: MAX_TIMEOUT_S };
+  NB.__kernelInternals = { Cdp: Cdp, openDriver: openDriver, setTabReuse: function (v) { TAB_REUSE = v; }, API: API, MCP_URL: MCP_URL, MAX_TIMEOUT_S: MAX_TIMEOUT_S, extractPageText: extractPageText, sweepPage: sweepPage };
 })();
