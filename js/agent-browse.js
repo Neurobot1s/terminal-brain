@@ -191,7 +191,28 @@
   function foot(t) { var f = document.querySelector("#ab-foot"); if (f) f.textContent = t; }
 
   /* ---------- the agent loop ---------- */
-  var MAX_STEPS = 9;
+  var MAX_STEPS = 14;
+
+  /* ---------- real-interaction helpers (drive the cloud browser) ----------
+     The model works with VISIBLE TEXT ("Sign in", "email"), not raw CSS —
+     these resolvers try a CSS selector first, then aria/placeholder/name/id,
+     then visible-text matching over buttons/links/fields. */
+  function pageContext(d) {
+    return d.eval("JSON.stringify((function(){function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}var out=[];try{document.querySelectorAll('input,textarea,select').forEach(function(e){if(!vis(e)||out.length>18)return;out.push({k:'field',t:e.tagName.toLowerCase(),type:e.type||'',ph:e.placeholder||e.getAttribute('aria-label')||e.name||e.id||'',v:String(e.value||'').slice(0,30)});});document.querySelectorAll('button,[role=button],input[type=submit],input[type=button],a').forEach(function(e){if(!vis(e)||out.length>40)return;var tx=(e.innerText||e.value||e.getAttribute('aria-label')||'').trim().slice(0,40);if(tx)out.push({k:/^a$/i.test(e.tagName)?'link':'btn',tx:tx});});}catch(e){}return out;})())")
+      .then(function (s) { try { return JSON.parse(s); } catch (e) { return []; } })
+      .catch(function () { return []; });
+  }
+  function resolveAndClick(d, arg) {
+    return d.eval("(function(){var arg=" + JSON.stringify(arg) + ";function norm(s){return String(s||'').toLowerCase().replace(/\\s+/g,' ').trim();}var el=null;try{el=document.querySelector(arg);}catch(e){}if(!el){var c=document.querySelectorAll('button,[role=button],input[type=submit],input[type=button],a,label');for(var i=0;i<c.length;i++){var e=c[i];var tx=norm(e.innerText||e.value||e.getAttribute('aria-label')||e.title);if(tx&&e.getBoundingClientRect().width>0&&(tx===norm(arg)||tx.indexOf(norm(arg))>-1||(norm(arg).indexOf(tx)>-1&&tx.length>3))){el=e;break;}}}if(!el)return JSON.stringify({ok:false});try{el.scrollIntoView({block:'center'});}catch(e2){}var r=el.getBoundingClientRect();var o={bubbles:true,cancelable:true,view:window,clientX:r.left+r.width/2,clientY:r.top+r.height/2};try{el.dispatchEvent(new PointerEvent('pointerdown',o));el.dispatchEvent(new MouseEvent('mousedown',o));el.dispatchEvent(new PointerEvent('pointerup',o));el.dispatchEvent(new MouseEvent('mouseup',o));}catch(e3){}el.click();return JSON.stringify({ok:true,label:(el.innerText||el.value||el.getAttribute('aria-label')||'').trim().slice(0,40)});})()")
+      .then(function (s) { try { return JSON.parse(s); } catch (e) { return { ok: false }; } })
+      .catch(function () { return { ok: false }; });
+  }
+  function resolveAndType(d, field, text) {
+    return d.eval("(function(){var arg=" + JSON.stringify(field) + ",text=" + JSON.stringify(text) + ";function norm(s){return String(s||'').toLowerCase();}var el=null;try{el=document.querySelector(arg);}catch(e){}if(!el){var c=document.querySelectorAll('input,textarea');for(var i=0;i<c.length;i++){var e=c[i];var t=e.type||'';if(t==='hidden'||t==='submit'||t==='button'||e.getBoundingClientRect().width<=0)continue;var hay=norm([e.placeholder,e.getAttribute('aria-label'),e.name,e.id,t,e.getAttribute('autocomplete')].join(' '));if(hay.indexOf(norm(arg))>-1){el=e;break;}}}if(!el){var types={'email':['email'],'mail':['email'],'password':['password'],'pass':['password'],'username':['text','email'],'user':['text','email'],'search':['search','text'],'phone':['tel'],'code':['text','tel','number']};var want=types[norm(arg)]||['text','email','tel','number'];for(var j=0;j<c.length;j++){var b=c[j];if(b.getBoundingClientRect().width>0&&want.indexOf(b.type||'text')>-1){el=b;break;}}}if(!el)return JSON.stringify({ok:false});try{el.scrollIntoView({block:'center'});}catch(e2){}el.focus();var proto=el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;var setter=Object.getOwnPropertyDescriptor(proto,'value').set;setter.call(el,text);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return JSON.stringify({ok:true,filled:String(el.placeholder||el.name||el.type||'field').slice(0,30)});})()")
+      .then(function (s) { try { return JSON.parse(s); } catch (e) { return { ok: false }; } })
+      .catch(function () { return { ok: false }; });
+  }
+  function settleIf(d) { try { if (d.settle) return d.settle().catch(function () {}); } catch (e) {} return Promise.resolve(); }
 
   /* when the loop ends without an explicit ANSWER — or the model emits an
      unclear step — compose the best answer from everything gathered so the
@@ -237,22 +258,36 @@
       if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
       status("step " + n + "/" + MAX_STEPS);
       foot("thinking with your local NVIDIA model…");
-      return think(
-        "You are agentBrowse, an autonomous web-research agent inside NeuroBot. " +
-        "ALWAYS reply in English. " +
-        "You drive a real cloud web browser step by step to answer the user's question.\n" +
-        "Reply with EXACTLY one line, in one of these formats (choose the single most useful next step):\n" +
-        "NEXT SEARCH mount everest height\n" +
-        "NEXT OPEN https://en.wikipedia.org/wiki/Mount_Everest\n" +
-        "NEXT READ https://en.wikipedia.org/wiki/Mount_Everest\n" +
-        "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
-        "SEARCH = google-like search, OPEN = navigate, READ = grab the page text, ANSWER = stop and answer. " +
-        "Start with SEARCH if no pages have been opened yet. Use ANSWER as soon as the steps so far let you answer. No other text.",
-        "QUESTION: " + query +
-        "\n\nSTEPS SO FAR:\n" + (steps.length ? steps.join("\n") : "(none yet)"),
-        220
-      ).then(function (raw) {
-        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|ANSWER)\s*:?\s*([\s\S]+)$/i);
+      return pageContext(d).then(function (elems) {
+        var elemLines = (elems || []).slice(0, 30).map(function (e) {
+          return e.k === "field" ? "  field " + e.t + "[" + e.type + "] “" + e.ph + "”" + (e.v ? " = " + e.v : "")
+            : "  " + e.k + " “" + e.tx + "”";
+        }).join("\n");
+        return think(
+          "You are agentBrowse, an autonomous web agent inside NeuroBot that DRIVES a real cloud browser. " +
+          "ALWAYS reply in English. " +
+          "You can both research AND interact with pages (sign-ups, logins, forms, buttons).\n" +
+          "Reply with EXACTLY one line, one of:\n" +
+          "NEXT SEARCH mount everest height\n" +
+          "NEXT OPEN https://en.wikipedia.org/wiki/Mount_Everest\n" +
+          "NEXT READ https://en.wikipedia.org/wiki/Mount_Everest\n" +
+          "NEXT CLICK Sign in\n" +
+          "NEXT TYPE email :: you@temp-mail.io\n" +
+          "NEXT KEY Enter\n" +
+          "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
+          "SEARCH = web search, OPEN = navigate, READ = extract page text, CLICK = click a button/link by its visible text, " +
+          "TYPE = fill a form field (field-name :: text — field-name can be email/password/username/search or the placeholder), " +
+          "KEY = press Enter to submit, ANSWER = stop and answer.\n" +
+          "For tasks that require DOING something (create an account, sign in, submit a form), you MUST use CLICK/TYPE/KEY — OPEN/READ alone cannot complete them. " +
+          "Temporary-email flows: OPEN a temp-mail site, READ the address, TYPE it into the sign-up form, KEY Enter, then OPEN/READ the inbox again for the confirmation code. " +
+          "Start with SEARCH or OPEN. Use ANSWER as soon as the steps let you. No other text.",
+          "QUESTION: " + query +
+          "\n\nCURRENT PAGE ELEMENTS:\n" + (elemLines || "(none detected)") +
+          "\n\nSTEPS SO FAR:\n" + (steps.length ? steps.join("\n") : "(none yet)"),
+          220
+        );
+      }).then(function (raw) {
+        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|CLICK|TYPE|KEY|ANSWER)\s*:?\s*([\s\S]+)$/i);
         if (!m) { log("model step unclear — answering from what was gathered", "warn"); return bestEffortAnswer(query, steps, lastPage); }
         var action = m[1].toUpperCase(), arg = m[2].trim();
         if (action === "ANSWER") {
@@ -260,6 +295,37 @@
           status("done");
           foot("");
           return { answer: arg };
+        }
+        if (action === "CLICK") {
+          log("clicking “" + arg + "”", "act");
+          foot("cloud browser → click");
+          return resolveAndClick(d, arg).then(function (r) {
+            if (!r || !r.ok) { log("no clickable “" + arg + "” on this page", "err"); return step(n + 1, d); }
+            log("clicked" + (r.label ? " “" + r.label + "”" : ""), "ok");
+            steps.push("CLICK “" + arg + "” → clicked" + (r.label ? " (“" + r.label + "”)" : ""));
+            return settleIf(d).then(function () { return sleep(600); }).then(function () { return step(n + 1, d); });
+          });
+        }
+        if (action === "TYPE") {
+          var parts = arg.split(/\s*::\s*/);
+          var fld = (parts[0] || "").trim(), val = parts.slice(1).join(" :: ").trim();
+          log("typing into “" + fld + "”", "act");
+          foot("cloud browser → type");
+          return resolveAndType(d, fld, val).then(function (r) {
+            if (!r || !r.ok) { log("no field matching “" + fld + "” here", "err"); return step(n + 1, d); }
+            log("typed into " + (r.filled || fld), "ok");
+            steps.push("TYPE " + fld + " → filled " + (r.filled || fld) + " with " + String(val).slice(0, 60));
+            return sleep(400).then(function () { return step(n + 1, d); });
+          });
+        }
+        if (action === "KEY") {
+          var key = (arg || "Enter").trim() || "Enter";
+          log("pressing " + key, "act");
+          foot("cloud browser → key " + key);
+          return d.press(key).catch(function () {}).then(function () {
+            steps.push("KEY " + key);
+            return settleIf(d).then(function () { return sleep(600); }).then(function () { return step(n + 1, d); });
+          });
         }
         if (action === "SEARCH") {
           log("searching the web for “" + arg + "”", "act");

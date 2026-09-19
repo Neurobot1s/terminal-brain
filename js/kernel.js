@@ -446,8 +446,12 @@
         return driver.eval("(function(){var e=document.querySelector(" + JSON.stringify(sel) + ");if(!e)return false;e.focus();e.value=" + JSON.stringify(text) + ";e.dispatchEvent(new Event('input',{bubbles:true}));return true;})()");
       },
       press: function (key) {
-        return cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: key, code: key, windowsVirtualKeyCode: 13, text: key === "Enter" ? "\r" : undefined }, attached)
-          .then(function () { return cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: key, code: key, windowsVirtualKeyCode: 13 }, attached); });
+        /* common keys → their Windows virtual keycodes (Enter=13, Tab=9, …);
+           unknown keys fall back to Enter's so the gesture still fires */
+        var VK = { Enter: 13, Tab: 9, Escape: 27, Esc: 27, Space: 32, Backspace: 8, Delete: 46, ArrowDown: 40, ArrowUp: 38, ArrowLeft: 37, ArrowRight: 39, Home: 36, End: 35, PageDown: 34, PageUp: 33 };
+        var vk = VK[key] || 13;
+        return cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: key, code: key === "Space" ? "Space" : key, windowsVirtualKeyCode: vk, text: key === "Enter" ? "\r" : undefined }, attached)
+          .then(function () { return cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: key, code: key === "Space" ? "Space" : key, windowsVirtualKeyCode: vk }, attached); });
       },
       screenshot: function () {
         return cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 62 }, attached)

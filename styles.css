@@ -702,6 +702,11 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select {
 input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus, select:focus {
   outline: none; border-color: rgba(124,156,255,.55); box-shadow: var(--ring);
 }
+/* iOS zooms the viewport into any focused input with font-size < 16px —
+   jarring mid-form. On touch devices, bump form inputs to 16px. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; }
+}
 .filter-bar input.search-input { width: auto; }
 
 /* ── command palette header compat ── */
