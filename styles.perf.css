@@ -32,9 +32,11 @@
 .graph-node circle, .graph-node text { transition: none; }
 .graph-node:hover circle { transform: scale(1.12); } /* keep hover pop, GPU-cheap */
 
-/* ── 2. Smoother scroll + safer taps ── */
-.view { overflow-y: overlay; }
-@supports not (overflow-y: overlay) { .view { overflow-y: auto; } }
+/* ── 2. Smoother scroll + safer taps ──
+   NOTE: .view must NEVER become a scroll container. The WINDOW is the
+   scroller (.view is an unconstrained flex child and simply grows with
+   its content — an overflow-y on it creates a zero-height scroller that
+   traps touch gestures = "can't scroll on any page"). */
 * { -webkit-tap-highlight-color: transparent; }
 a, button, .row-btn, .row-del, .pin-btn, .modal-close, .qc-btn, .icon-btn {
   touch-action: manipulation; /* kill 300ms double-tap-zoom delay on iOS */

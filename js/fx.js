@@ -43,12 +43,15 @@
      anywhere else closes any open swipe. Vertical scrolling is never
      hijacked: rows only react once horizontal intent is clear. */
   document.addEventListener("touchstart", function (e) {
-    if (e.touches.length !== 1) return;
+    if (e.touches.length !== 1) return; /* pinch (2+ fingers) — never intercept */
     var row = e.target.closest && e.target.closest(".activity-row, .notif-row");
     if (!row) return;
     var t = e.touches[0];
     var sx = t.clientX, sy = t.clientY, tracked = false, open = row.classList.contains("swipe-open");
     function move(ev) {
+      /* a second finger joined → this became a pinch/zoom — release the gesture
+         immediately or the browser's zoom stalls and the page "glitches" */
+      if (ev.touches.length !== 1) { cleanup(); row.classList.remove("swiping"); return; }
       if (!tracked) {
         var dx = ev.touches[0].clientX - sx, dy = ev.touches[0].clientY - sy;
         if (Math.abs(dx) < 14) return; /* wait for clear intent */
