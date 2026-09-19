@@ -204,7 +204,11 @@
             kbOut.className = "ai-test-out ok";
           } else {
             var why = NB.kernelProbeError ? NB.kernelProbeError() : "";
-            kbOut.textContent = "⚠ Kernel unreachable" + (why ? " — " + why : "") + ".\nCheck your connection, or the built-in key may be rate-limited. A relay URL below is still honored first.";
+            if (NB.kernelProbeBlocked && NB.kernelProbeBlocked()) {
+              kbOut.textContent = "⚠ Kernel blocks direct browser calls (CORS) — this is a Kernel-side limitation, not a bug on your end.\nOne-time fix (2 min, free): deploy kernel-relay.js to Cloudflare Workers (file is in the repo), then paste the worker URL into the relay field below. Everything else keeps working meanwhile.";
+            } else {
+              kbOut.textContent = "⚠ Kernel unreachable" + (why ? " — " + why : "") + ".\nCheck your connection, or the built-in key may be rate-limited. A relay URL below is still honored first.";
+            }
             kbOut.className = "ai-test-out err";
           }
         });

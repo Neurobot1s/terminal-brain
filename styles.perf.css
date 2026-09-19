@@ -499,10 +499,10 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .scrim { display: block; opacity: 0; pointer-events: none; transition: opacity 0.26s var(--ease); }
 .scrim.show { opacity: 1; pointer-events: auto; }
 
-/* topbar vibrancy on desktop GPUs only (mobile keeps the flat bar) */
-@media (min-width: 861px) {
-  .topbar { backdrop-filter: blur(14px) saturate(1.5); -webkit-backdrop-filter: blur(14px) saturate(1.5); background: rgba(9, 12, 20, 0.72); }
-}
+/* topbar vibrancy on desktop GPUs only (mobile keeps the flat bar)
+   REMOVED: backdrop-filter repaints the whole bar every scroll frame
+   (it sits sticky above the scrolling page). The flat translucent bar
+   looks nearly identical and scrolls butter-smooth. */
 
 /* graph: springy node hover without per-frame timers */
 .graph-node circle { transition: transform 0.28s var(--spring), fill 0.2s var(--ease); }
@@ -538,33 +538,16 @@ textarea:focus-visible, [tabindex]:focus-visible {
 /* ── smoothness: contain the app so scrolling only paints its layer ──
    Fixed chrome (sidebar/topbar/footer) never needs repainting while the
    page scrolls; `contain` lets the browser skip their layout+paint work
-   entirely. The scrolling element gets its own compositor layer so
-   wheel/touch scrolling is GPU-smooth instead of main-thread. */
+   entirely. REMOVED from #view: will-change/translateZ — the window is
+   the scroller here (not .view), so promoting the whole page-height
+   view to its own GPU layer made scrolling WORSE (viewport-sized layer
+   rasterized, texture uploads on every route change). */
 .sidebar, .topbar, .status-bar { contain: layout style paint; }
-#view.view {
-  contain: layout style;
-  will-change: scroll-position; /* promotes the scroller — cheap, one layer */
-  transform: translateZ(0);
-}
+#view.view { contain: layout style; }
+body.reduce-motion #view.view { contain: none; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body.reduce-motion { scroll-behavior: auto; }
-
-/* ── smoothness: contain the app so scrolling only paints its layer ──
-   Fixed chrome (sidebar/topbar/footer) never needs repainting while the
-   page scrolls; `contain` lets the browser skip their layout+paint work
-   entirely. The scrolling element itself gets its own compositor layer
-   so wheel/touch scrolling is GPU-smooth instead of main-thread. */
-.sidebar, .topbar, .status-bar { contain: layout style paint; }
-#view.view {
-  contain: layout style;
-  will-change: scroll-position; /* promotes the scroller — cheap, one layer */
-  transform: translateZ(0);
-}
-body.reduce-motion #view.view,
-@media (prefers-reduced-motion: reduce) { }
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 /* inputs: autofill keeps the dark theme */
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
@@ -738,6 +721,11 @@ body.reduce-motion .ab-boot { animation: none; }
 /* keyboard help: subtle kbd press effect in the shortcuts modal */
 .sc-keys kbd { transition: transform .12s var(--ease); }
 .sc-keys kbd:active { transform: translateY(1px); }
+
+/* ── polish-layer compat: the swipe-to-delete reveal translates the
+   delete button in from the right edge (already flush with the row —
+   base padding is symmetric), so nothing else is needed. Kept as a
+   documentation anchor for the swipe section above. */
 
 /* rich empty states: live stats + every capture action, never a dead end */
 .empty-rich { padding: 40px 22px; }

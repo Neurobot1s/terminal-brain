@@ -3,22 +3,34 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
-## Current state (2026-09-18) — ALL GREEN
-All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 14 JS files syntax-clean (`node --check`). `tsc -b --noEmit` clean. Kernel org left with **0 idle sessions** (verified via MCP API). Nothing pending.
+## Current state (2026-09-19) — ALL GREEN
+All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 14 JS files syntax-clean (`node --check`). All 3 CSS files brace-balanced. Cache-busters bumped to `?v=20260919c` (index.html) — stale kernel.js/CSS copies are impossible after deploy.
 
-## Hotfix — "Kernel still unavailable" → FIXED via MCP transport
-- **Root cause:** `kernel.js` created/listed/deleted sessions against `api.onkernel.com` REST, which sends **no CORS headers** (preflight 405, zero ACAO — re-verified). Browsers could never reach it from GitHub Pages → `kernelAgent.ready()` always failed → "kernel unreachable — falling back to in-site readers".
-- **Fix:** Kernel's **MCP server `https://mcp.onkernel.com/mcp` IS CORS-open** (`Access-Control-Allow-Origin: *` on `mcp.onkernel.com`, Vercel-hosted; exposes `mcp-session-id`). It accepts the same Bearer key. All session REST now goes through the MCP `manage_browsers` tool:
-  - `initialize` (lazy, shared `mcp-session-id`, stored from the response header) → `notifications/initialized` (202) → `tools/call manage_browsers {action: create|list|get|delete}`.
-  - Response bodies are SSE frames (`data: {...}`) whose `result.content[0].text` is JSON: `create`/`get` → `{"browser":{…}}`, `list` → `{"items":[…]}` (oldest-first), `delete` → plain text.
-  - Everything else is unchanged: fresh session per run, 72h max timeout, per-run CDP tab, tab closed + **session deleted on finish** (success, error, or vanish), limit-reclaim (close 2 oldest on concurrent-cap error, incl. HTTP 409/429), one vanish-retry with a brand-new session.
-  - `create` returns `cdp_ws_url` + `browser_live_view_url` (live-verified), so the driver + live iframe keep connecting directly (WebSockets/iframes have no CORS).
-- Live-verified end-to-end against the real API: initialize → create (`neurobot-*`, max timeout 259200) → get → delete → list = 0 sessions left. A stray probe session was deleted; org is clean.
-- Settings → Kernel Browser copy updated (no more "REST unreachable (CORS)" messaging); relay field still honored first if the user pastes one. `NB.kernelEnv()` now also reports `transport: "mcp"|"relay"`.
-- `tests/kernel.test.js` still passes untouched (TEST_MODE stubs the transport and exercises the CDP driver).
-- Note: the MCP session id can go stale server-side — `mcpBrowsers` auto-reinitializes once on 400/404. Key override in Settings resets the MCP handshake.
+## Round 3 — kernel CORS truth + scrolling/GPU-layer fixes
 
-## Round 2 — micro-interactions + living data (styles.perf.css §14–15)
+### 1. "Kernel unreachable" — REAL root cause found (read before touching kernel.js again)
+- **The MCP POST response carries NO CORS headers.** Re-verified live with `curl -D -` on 2026-09-19:
+  - `OPTIONS /mcp` preflight → **204 with `access-control-allow-origin: *`** (this is what fooled the previous round)
+  - `POST /mcp` → **200 with ZERO `access-control-*` response headers**
+- Browsers check ACAO **on the actual response**, not just the preflight — so every real fetch() from a static-site browser is blocked. **curl works, browsers don't.** This is exactly why the MCP transport "passed curl" but the UI kept saying unreachable.
+- Also dead-ended: `GET /sse` (legacy transport) hangs with no headers; `api.kernel.sh` DNS-dead; every public CORS proxy (see history below). REST `api.onkernel.com` sends nothing either.
+- **Verdict: there is NO browser-only transport today.** The only working path from a static site is the **kernel-relay Worker** (2-min deploy, free) — its code (`kernel-relay.js`) already forwards MCP-style REST and sets CORS. Relay URL goes in Settings → Kernel Browser.
+- **kernel.js changes this round:**
+  - Transport stays wired (initialize → manage_browsers) so the day Kernel adds response CORS, the site lights up with zero changes.
+  - Network TypeErrors now map to the honest, actionable `CORS_HELP` message (deploy the relay) instead of a generic failure.
+  - New exports: `NB.kernelProbeBlocked()` (true when the probe failed via CORS) and `NB.kernelUsable()` (true only when a relay is set).
+- **UI messaging (no more dead ends):**
+  - Settings → Kernel Browser test button now explains the Kernel-side limitation and the 2-minute relay fix verbatim.
+  - agentBrowse fallback line says "kernel blocked by browser CORS — using in-site readers instead (deploy kernel-relay.js to enable cloud runs)".
+  - Dashboard brain-health chip gained a tooltip: counts + "all data stays on this device".
+
+### 2. Scrolling smoothness — three real jank sources removed
+- **styles.perf.css had a broken block** (a selector list ending in a comma directly followed by `@media` — parse-breaking garbage from a pasted edit; browsers skipped the rest of the rule set). Repaired into valid rules; all 3 CSS files now brace-balanced.
+- **Removed `#view { will-change: scroll-position; transform: translateZ(0) }`.** The WINDOW is the scroller (not `.view`), so this promoted the entire page-height view to its own GPU layer — viewport-sized raster + texture uploads per route change. Net: scrolling got WORSE. `contain: layout style` kept on `#view`; `contain: layout style paint` kept on fixed chrome (sidebar/topbar/status) where it does help.
+- **Removed the desktop-only topbar `backdrop-filter: blur(14px)`.** A sticky blurred bar repaints every scroll frame on desktop too. The flat translucent bar is visually near-identical and scroll-cheap.
+- **main.js no longer scrolls to top on data-op re-renders.** `window.scrollTo(0,0)` now fires only on real hash navigation — pin/delete/idea-status ops re-dispatch `hashchange` with the SAME hash and used to yank the user to the top mid-read. `html { scroll-behavior: smooth }` stays but was de-duplicated (it was declared twice, two different files).
+
+### Round 2 — micro-interactions + living data (styles.perf.css §14–15)
 - **Entrance choreography:** stat cards/panels cascade in with 30–40ms steps (`cardIn`, spring); graph nodes pop in staggered + radial halo behind the graph (`core-part2.js` renderGraph unchanged — CSS only).
 - **Count-up stat animation:** `NB.animateCounters(view)` (core-part2.js) animates `.stat-val` numbers 0→N over 650ms ease-out-cubic, one rAF per node, skips 0/reduced-motion, auto-cancels if the node leaves the DOM. Called from main.js after each route render.
 - **Route transition is now hash-aware** (main.js): `route()` tracks `lastHash` — the `.route-in` animation only plays on REAL navigation, not on data-op re-renders (pin/delete re-dispatch `hashchange` with the same hash; replaying there was obnoxious).

@@ -46,7 +46,10 @@
       view.classList.add("route-in");
     }
     if (NB.animateCounters) NB.animateCounters(view);
-    window.scrollTo(0, 0);
+    /* scroll to top ONLY on real navigation — data-op re-renders (pin /
+       delete re-dispatch hashchange with the same hash) used to yank the
+       user back to the top of the page mid-scroll */
+    if (navigated) window.scrollTo(0, 0);
     closeMobileNav();
   }
 
@@ -75,6 +78,8 @@
       dot.style.boxShadow = "0 0 10px rgba(74,222,128,.65)";
       label.textContent = "Brain thriving · " + total + " items";
     }
+    var bh = $("#brain-health");
+    if (bh) bh.title = label.textContent + " — all data stays on this device";
   }
 
   /* ---------- command palette (Ctrl+K) ---------- */

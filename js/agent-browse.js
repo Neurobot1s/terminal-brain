@@ -388,7 +388,13 @@
     NB.kernelAgent.ready().then(function (ok) {
       if (ok) startRun(true);
       else {
-        log("kernel unreachable — falling back to in-site readers", "err");
+        var blocked = NB.kernelProbeBlocked && NB.kernelProbeBlocked();
+        log(
+          blocked
+            ? "kernel blocked by browser CORS — using in-site readers instead (deploy kernel-relay.js to enable cloud runs)"
+            : "kernel unreachable — falling back to in-site readers",
+          "err"
+        );
         /* no live iframe ever arrived — drop the empty kernel viewport */
         var vw = document.querySelector("#ab-viewwrap");
         if (vw && !vw.querySelector("#ab-live")) vw.remove();
