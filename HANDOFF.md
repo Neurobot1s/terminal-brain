@@ -3,8 +3,23 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
-## Current state (2026-09-19) — ALL GREEN
-All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 14 JS files syntax-clean (`node --check`). All 3 CSS files brace-balanced. Cache-busters bumped to `?v=20260919c` (index.html) — stale kernel.js/CSS copies are impossible after deploy.
+## Current state (2026-09-19) — ALL GREEN, CLOUD BROWSER LIVE
+All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 14 JS files syntax-clean (`node --check`). All 3 CSS files brace-balanced. Cache-busters bumped to `?v=20260919d` (index.html).
+
+**Cloud-browser runs are LIVE end-to-end.** Verified 2026-09-19 with a real smoke test (create → CDP WebSocket → navigate example.com → read title → close tab → delete, all through the relay): ALL PASS. A deployed relay is now BUILT IN (`BUILTIN_RELAY` in js/kernel.js) — zero setup for users.
+
+## Round 4 — relay is built-in + auth fix (this made Kernel actually work)
+
+### The last bug: relay REST went out WITHOUT the Authorization header
+- The deployed relay forwards auth faithfully — but `openRelayDriver` sent create/delete fetches with only `Content-Type`. Kernel answered **401 "Authentication token required"** on every browser create. Verified live: same POST with `Authorization: Bearer <key>` → 200 + full session payload.
+- **Fixes in js/kernel.js:**
+  - `BUILTIN_RELAY` constant = the project's Cloudflare Worker. `relayBase()` falls back to it; a user override (Settings) wins; clearing the field returns to built-in. `NB.getKernelRelay()` returns the EFFECTIVE relay so Settings prefills it.
+  - Every relay call (create, delete, probe) now sends `Authorization: Bearer <key>`.
+  - `openRelayDriver` hardened: error bodies surfaced (`relay 401: …`), create-failure after browser open deletes the session (no leaks), deletes are `keepalive` fire-and-forget so a dead relay can't hang the UI.
+  - `kernelAgent.ready()` now PROBES the relay (authenticated GET /browsers, 15s budget, one retry) instead of assuming — `NB.kernelProbeBlocked()` still flags network/CORS failures.
+  - `NB.kernelUsable()` = true when any relay is set (true out of the box now); TEST/TAB_REUSE modes report usable so tests exercise the driver.
+- **Live verification (node, real network):** POST /browsers → 200 + cdp_ws_url → CDP WS connect → Target.createTarget/attach/Page.navigate → `document.title` = "Example Domain" → Target.closeTarget → DELETE → 204. Relay + auth + CDP + cleanup ALL PASS.
+- **UI:** Settings → Kernel Browser says the relay is built-in, prefills the effective URL, probe says "relay transport"; agentBrowse fallback line points at the relay URL instead of telling users to deploy one.
 
 ## Round 3 — kernel CORS truth + scrolling/GPU-layer fixes
 
@@ -47,13 +62,11 @@ All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `ag
 - **main.js:** route change replays the `.route-in` animation (remove → reflow → add).
 
 ## Kernel Browser — transport history (read this before touching)
-- **REST create/list/delete is CORS-blocked from browsers. Verified exhaustively:** preflight returns 405 with zero ACAO headers from every origin. No allow-listing exists. **This is why the MCP transport above exists — do not go back to REST.**
+- **RESOLVED (Round 4): the relay is BUILT IN and verified live.** `BUILTIN_RELAY` in js/kernel.js; runs create/delete real cloud browsers through it today. Only touch this if the worker dies — then deploy a fresh one from `kernel-relay.js` and either update `BUILTIN_RELAY` or paste the URL in Settings → Kernel Browser (the override wins).
+- **REST create/list/delete is CORS-blocked from browsers when called directly.** Do not remove the relay.
 - **All public CORS forwarders tested and dead:** corsproxy.io (401 paid), allorigins (timeout), thingproxy (dead), codetabs (timeout), whateverorigin (GET-only, 405 on POST), cors.lol (429), crossorigin.me (dead), r.jina.ai (timeout), cors-anywhere demo (403 needs opt-in), test.cors.workers.dev (429). **Do not ship an auto-fallback to public proxies — it cannot work.**
-- Therefore: browser CAN'T spin up sessions by itself. Two working paths:
-  1. **Settings → Kernel Browser → relay field** + `kernel-relay.js` (Cloudflare Worker, 2-min deploy) → full fresh-session-per-run mode, auto-used by agentBrowse + Live voice.
-  2. No relay → agentBrowse falls back to in-site readers (Wikipedia/jina) with honest messaging; Live voice keeps working (chat/TTS don't need Kernel).
 - CDP WebSocket + live-view iframe connect DIRECTLY (no CORS on WS/iframes) once a session exists.
-- Fresh-session-per-run + delete-on-finish + limit-reclaim logic all live in `js/kernel.js` (`acquireManaged`, `runManaged` with the vanish-retry). Settings test button labels honestly.
+- Fresh-session-per-run + delete-on-finish + limit-reclaim logic all live in `js/kernel.js`. Settings test button probes the relay and labels honestly.
 
 ## Hotfix — Chinese text leaking into answers
 - gpt-oss sometimes returns empty `content` + chain-of-thought in `reasoning` **in Chinese**. `extractAnswer` used to fall back to that raw reasoning → Chinese in the UI. Now the reasoning fallback is only used when it's ≥70% Latin script (`latinRatio`), and "ALWAYS reply in the user's language — default to English" is pinned in the agent system prompt, summarize pass, and both agentBrowse prompts.

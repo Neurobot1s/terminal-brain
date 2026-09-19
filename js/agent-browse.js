@@ -391,7 +391,7 @@
         var blocked = NB.kernelProbeBlocked && NB.kernelProbeBlocked();
         log(
           blocked
-            ? "kernel blocked by browser CORS — using in-site readers instead (deploy kernel-relay.js to enable cloud runs)"
+            ? "kernel relay unreachable from this browser — falling back to in-site readers (check the relay URL in Settings → Kernel Browser)"
             : "kernel unreachable — falling back to in-site readers",
           "err"
         );

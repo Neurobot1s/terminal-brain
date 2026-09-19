@@ -3,23 +3,19 @@
    "Kernel mode" — the agent drives a REAL cloud Chromium
    (kernel.sh) while you watch it live, inside NeuroBot.
 
-   How it works from a static site (no server, no relay):
+   How it works from a static site (no server on our side):
    • Kernel's REST API (api.onkernel.com) sends NO CORS headers,
-     so browsers can't call it. Its MCP server (mcp.onkernel.com)
-     looked promising — it answers OPTIONS preflights with
-     ACAO:* — but the ACTUAL POST responses carry NO CORS headers
-     at all, so real browsers block every session call. curl works,
-     fetch() does not. (Verified 2026-09-19.)
-   • So the transport is "preflight-race": fire the preflight GET
-     and the POST together. The preflight response is edge-cached by
-     Vercel and DOES carry ACAO:* — when the browser uses it to
-     answer its own preflight, the POST is allowed through even
-     though the POST response itself is header-less. If the POST
-     wins the race it wins cleanly on its own. Either way the call
-     can succeed — a situation that simply didn't exist before.
-   • Non-blocking calls (session deletes on cleanup) additionally go
-     out as no-cors keepalive fetches — the POST is fire-and-forget,
-     no headers can be "read" that the browser could block on.
+     so browsers can't call it. Its MCP server looked promising —
+     it answers OPTIONS preflights with ACAO:* — but the ACTUAL
+     POST responses carry no CORS headers at all, so real browsers
+     block every session call. (Verified 2026-09-19.)
+   • FIX: a tiny Cloudflare Worker relay (kernel-relay.js) forwards
+     browser REST to api.onkernel.com with CORS on every response.
+     A project-deployed relay is BUILT IN (BUILTIN_RELAY below) so
+     cloud-browser runs work with zero setup; users can swap in
+     their own relay URL (or clear the override) in Settings.
+     Every relay call carries the Authorization header — the relay
+     forwards it to Kernel (without it: 401).
    • Sessions are created with Kernel's MAXIMUM idle timeout
      (72h) and DELETED the moment the run finishes — nothing
      ever sits idle. If the account's concurrent-session limit
@@ -28,8 +24,8 @@
    • The CDP WebSocket (wss://…/browser/cdp?jwt=…) from the MCP
      payload accepts any Origin — WebSockets aren't subject to
      CORS — so the driver connects straight to the cloud tab.
-   • Optional: a kernel-relay Worker can still be pasted in
-     Settings — every run then goes through your own endpoint.
+   • Optional: a kernel-relay Worker can also be swapped in
+     Settings — every run then goes through YOUR endpoint.
    • When the MCP transport still can't complete in a browser,
      Settings says so honestly and points at the one-click relay —
      NO more dead-end "unreachable" messaging.
@@ -42,6 +38,12 @@
      Scoped to NeuroBot's Kernel org. The user can override it in
      Settings → Kernel Browser (stored on their device only). */
   var BUILTIN_KEY = "sk_3f9ea184-1094-ee4e-f1ae-39ebe2637b9e.lfDHUAScxT67Xvn2NZcHbw8PpOgCF97fwG0wd57451w";
+  /* Built-in session relay (project-deployed Cloudflare Worker). Kernel's REST
+     API sends no CORS headers, so a browser cannot call api.onkernel.com —
+     this worker forwards browser REST with CORS on every response. A user can
+     override it in Settings → Kernel Browser; clearing the field returns to
+     this default. */
+  var BUILTIN_RELAY = "https://jolly-breeze-f8f9.tanishqlalwani202.workers.dev";
   var API = "https://api.onkernel.com";
   var MCP_URL = "https://mcp.onkernel.com/mcp";
   var KEY_LS = "nb_kernel_key";
@@ -55,7 +57,7 @@
   var SETTLE_CAP_MS = 20000;
 
   var currentLive = ""; /* live-view URL of the most recent run's browser */
-  var CORS_HELP = "Kernel's API doesn't allow browser calls from other sites (CORS). Deploy the 2-minute relay (kernel-relay.js → Cloudflare Workers) and paste its URL in Settings → Kernel Browser to enable cloud-browser runs.";
+  var CORS_HELP = "Kernel blocks direct browser calls (CORS). NeuroBot routes sessions through its built-in relay — if runs fail, check the relay URL in Settings → Kernel Browser (or deploy your own kernel-relay.js to Cloudflare Workers and paste it there).";
   /* jsdom test harness sets this: skip Kernel transport (fetch is stubbed) and
      reuse the fake WebSocket directly — still exercises the full driver. */
   var TEST_MODE = false;
@@ -67,16 +69,20 @@
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   function apiKey() { return String(lsGet(KEY_LS) || BUILTIN_KEY).trim(); }
-  function relayBase() { return String(lsGet(RELAY_LS) || (NB.getKernelRelay && NB.getKernelRelay()) || "").trim(); }
+  function relayBase() {
+    return String(lsGet(RELAY_LS) || (NB.getKernelRelay && NB.getKernelRelay()) || BUILTIN_RELAY).trim();
+  }
 
   /* ============================================================
      MCP transport — https://mcp.onkernel.com/mcp
-     See the file header: the POST response carries no CORS headers,
-     so every POST is raced against a cache-warming preflight GET.
-     Responses are SSE frames (`data: {jsonrpc}` lines) but some
-     deployments reply with a single plain-JSON body — both parsed.
-     A streamable-GET fallback channel covers servers that stream
-     replies there while only accepting commands via POST.
+     Fallback only (no relay configured). Responses are SSE frames
+     (`data: {jsonrpc}` lines) but some deployments reply with a
+     single plain-JSON body — both parsed. A watchdog aborts hung
+     requests. NOTE: from a static-site browser this POST is
+     CORS-blocked today (the response carries no ACAO header) —
+     the relay is the working path; this transport stays wired so
+     the day Kernel adds response CORS, the site lights up with
+     zero changes.
      ============================================================ */
   var mcpSession = ""; /* mcp-session-id from the initialize response */
   var mcpReadyPromise = null;
@@ -116,13 +122,15 @@
     };
     if (mcpSession) h["mcp-session-id"] = mcpSession;
     return h;
-  }  /* one raw MCP POST → resolves { sid, data } (data = last JSON-RPC frame)
+  }
+
+  /* one raw MCP POST → resolves { sid, data } (data = last JSON-RPC frame)
      Responses are SSE frames (`data: {...}` lines) but some deployments
      reply with a single plain-JSON body — both are parsed. A watchdog
      aborts hung requests. NOTE: from a static-site browser this POST is
      CORS-blocked today (the response carries no ACAO header) — the relay
-     path below is what actually works; this transport stays wired so the
-     day Kernel adds response CORS, the site lights up with zero changes. */
+     is the working path; this transport stays wired so the day Kernel
+     adds response CORS, the site lights up with zero changes. */
   function mcpRaw(sessionId, payload) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REST_TIMEOUT_MS) : null;
@@ -214,6 +222,34 @@
         throw e;
       });
     });
+  }
+
+  /* relay health probe: authenticated GET /browsers (session list).
+     Cheap, CORS-clean, and proves both the relay AND the key in one call. */
+  function probeRelay() {
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 15000) : null;
+    return fetch(relayBase() + "/browsers", { headers: { "Authorization": "Bearer " + apiKey() }, signal: ctrl && ctrl.signal })
+      .then(function (r) {
+        if (timer) clearTimeout(timer);
+        if (!r.ok) {
+          return r.text().catch(function () { return ""; }).then(function (t) {
+            var err = new Error("relay " + r.status + (t ? ": " + t.slice(0, 120) : ""));
+            err.status = r.status;
+            throw err;
+          });
+        }
+        return true;
+      })
+      .catch(function (e) {
+        if (timer) clearTimeout(timer);
+        if (e && (e.name === "TypeError" || /failed to fetch|networkerror/i.test(String(e.message || "")))) {
+          var cors = new Error(CORS_HELP);
+          cors.cors = true;
+          throw cors;
+        }
+        throw e;
+      });
   }
 
   /* normalize an MCP browser object into the shape the driver expects */
@@ -387,23 +423,36 @@
     return driver.start();
   }
 
-  /* fresh browser via relay (optional self-hosted endpoint) —
-     created and torn down per run */
+  /* fresh browser via the relay — created and torn down per run.
+     The relay forwards the Authorization header to Kernel, so every
+     REST call MUST carry it (verified live: without it Kernel answers
+     401 "Authentication token required"). */
   function openRelayDriver(onSession) {
-    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REST_TIMEOUT_MS) : null;
-    return fetch(relayBase() + "/browsers", {
+    var auth = { "Authorization": "Bearer " + apiKey(), "Content-Type": "application/json" };
+    function relayFetch(url, opts) {
+      var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REST_TIMEOUT_MS) : null;
+      opts = opts || {};
+      opts.headers = auth;
+      if (ctrl) opts.signal = ctrl.signal;
+      return fetch(url, opts).then(function (r) {
+        if (timer) clearTimeout(timer);
+        if (!r.ok) {
+          return r.text().catch(function () { return ""; }).then(function (t) {
+            var err = new Error("relay " + r.status + (t ? ": " + t.slice(0, 120) : ""));
+            err.status = r.status;
+            throw err;
+          });
+        }
+        return r.status === 204 ? null : r.json();
+      }).catch(function (e) {
+        if (timer) clearTimeout(timer);
+        throw e;
+      });
+    }
+    return relayFetch(relayBase() + "/browsers", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timeout_seconds: MAX_TIMEOUT_S }),
-      signal: ctrl && ctrl.signal,
-    }).then(function (r) {
-      if (timer) clearTimeout(timer);
-      if (!r.ok) throw new Error("relay " + r.status);
-      return r.json();
-    }).catch(function (e) {
-      if (timer) clearTimeout(timer);
-      throw e;
+      body: JSON.stringify({ timeout_seconds: MAX_TIMEOUT_S, name: "neurobot-" + Math.random().toString(36).slice(2, 8) }),
     }).then(function (s) {
       var driverSeed = {
         base: s.base_url, jwt: (s.cdp_ws_url || "").split("jwt=")[1] || "",
@@ -413,9 +462,18 @@
       if (onSession) { try { onSession(s); } catch (e) {} }
       return openDriver(driverSeed).then(function (d) {
         d.close = (function (orig) {
-          return function () { return orig().then(function () { try { fetch(relayBase() + "/browsers/" + d.session.sid, { method: "DELETE" }); } catch (e) {} }); };
+          return function () {
+            return orig().then(function () {
+              /* best-effort delete; fire-and-forget so a dead relay can't hang the UI */
+              try { fetch(relayBase() + "/browsers/" + d.session.sid, { method: "DELETE", headers: auth, keepalive: true }).catch(function () {}); } catch (e) {}
+            });
+          };
         })(d.close);
         return d;
+      }).catch(function (err) {
+        /* browser/WS failed after creation — don't leak the session */
+        try { fetch(relayBase() + "/browsers/" + s.session_id, { method: "DELETE", headers: auth, keepalive: true }).catch(function () {}); } catch (e2) {}
+        throw err;
       });
     });
   }
@@ -520,13 +578,15 @@
     return "off";
   };
 
-  /* can cloud-browser runs actually start in THIS browser? The MCP
-     transport is wired but currently CORS-blocked for static-site
-     browsers — only a relay makes it real, so report that honestly
-     instead of letting runs fail mid-flight. */
+  /* Can cloud-browser runs start in THIS browser? True when a relay is set
+     (the built-in default makes this true out of the box — verified live).
+     TEST/TAB_REUSE modes report usable so tests exercise the driver. */
   NB.kernelUsable = function () {
+    if (TAB_REUSE || TEST_MODE) return true;
     return !!(relayBase() && relayBase().length);
   };
+
+
 
   /* Live-view URL of the most recent cloud browser (for embedding). */
   NB.kernelLiveUrl = function () {
@@ -543,21 +603,22 @@
        Cached for 5 minutes so UI paths can call it freely. */
     ready: function () {
       if (TAB_REUSE || TEST_MODE) return Promise.resolve(true);
-      if (relayBase()) return Promise.resolve(true);
       if (!NB.kernelAgent.available()) return Promise.resolve(false);
       var now = Date.now();
       if (readyPromise && now - readyAt < 300000) return readyPromise;
       readyAt = now;
-      readyPromise = mcpBrowsers({ action: "list" })
-        .then(function () { readyError = ""; return true; })
+      /* relay first (the built-in default makes this the live path);
+         MCP list is the no-relay fallback probe */
+      readyPromise = (relayBase() ? probeRelay() : mcpBrowsers({ action: "list" }).then(function () { return true; }))
+        .then(function (ok) { readyError = ""; readyIsCors = false; return ok; })
         .catch(function (e) {
-          /* one transparent retry with a brand-new MCP handshake before
-             giving up — guards against a stale session-id killing the probe */
+          /* one transparent retry with a fresh probe before giving up —
+             guards against a cold worker or a stale MCP session id */
           readyPromise = null; readyAt = 0;
           mcpSession = ""; mcpReadyPromise = null;
           return sleep(450).then(function () {
-            return mcpBrowsers({ action: "list" });
-          }).then(function () { readyError = ""; return true; }).catch(function (e2) {
+            return relayBase() ? probeRelay() : mcpBrowsers({ action: "list" }).then(function () { return true; });
+          }).then(function () { readyError = ""; readyIsCors = false; return true; }).catch(function (e2) {
             readyError = (e2 && e2.message) || (e && e.message) || "unreachable";
             readyIsCors = !!(e2 && e2.cors) || !!(e && e.cors);
             return false;
@@ -626,13 +687,15 @@
     readyPromise = null; readyAt = 0; /* re-probe with the new key */
     mcpSession = ""; mcpReadyPromise = null; /* new key → new MCP handshake */
   };
-  NB.getKernelRelay = function () { return lsGet(RELAY_LS); };
+  /* effective relay (stored override or built-in) — Settings prefills this */
+  NB.getKernelRelay = function () { return String(lsGet(RELAY_LS) || BUILTIN_RELAY).trim(); };
   NB.setKernelRelay = function (v) {
-    try { if (v) localStorage.setItem(RELAY_LS, String(v).trim()); else localStorage.removeItem(RELAY_LS); } catch (e) {}
+    try { if (v) localStorage.setItem(RELAY_LS, String(v).trim().replace(/\/+$/, "")); else localStorage.removeItem(RELAY_LS); } catch (e) {}
   };
   NB.kernelEnv = function () {
     var custom = !!lsGet(KEY_LS);
-    return { mode: NB.kernelMode(), key: custom ? "custom" : "built-in", relay: relayBase(), transport: relayBase() ? "relay" : "mcp" };
+    var customRelay = !!lsGet(RELAY_LS);
+    return { mode: NB.kernelMode(), key: custom ? "custom" : "built-in", relay: relayBase(), relayCustom: customRelay, transport: relayBase() ? "relay" : "mcp" };
   };
 
   /* last probe failure, for the Settings diagnostic */

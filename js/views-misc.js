@@ -79,12 +79,12 @@
         '<p class="muted muted-xs">Runs fully client-side — the browser talks straight to NVIDIA. Only your question + relevant memory text leave the device.</p>' +
       '</section>' +
       '<section class="panel"><h3>Kernel Browser</h3>' +
-        '<p class="muted">agentBrowse and Live voice drive a real cloud Chromium (Kernel). Every run spins up a <strong>fresh browser</strong> with the max timeout and deletes it when done — nothing sits idle. A built-in key is included; optionally paste your own from <a class="panel-link" href="https://onkernel.com" target="_blank" rel="noopener">onkernel.com</a> — it stays on this device.</p>' +
+        '<p class="muted">agentBrowse and Live voice drive a <strong>real cloud Chromium</strong> (Kernel). Every run spins up a <strong>fresh browser</strong> with the max timeout and deletes it when done — nothing sits idle. A built-in key <em>and</em> a deployed session relay are included, so cloud-browser runs work with zero setup. Optionally paste your own Kernel key from <a class="panel-link" href="https://onkernel.com" target="_blank" rel="noopener">onkernel.com</a> — it stays on this device.</p>' +
         '<div class="row-between"><span>Mode</span><code id="kb-mode" class="key-preview"></code></div>' +
         '<div class="row-between"><span>Key in use</span><code id="kb-key-preview" class="key-preview"></code></div>' +
         '<div class="ai-key-row"><input id="kb-key-input" class="key-input" placeholder="Optional: your own Kernel key (sk_…)" autocomplete="off" spellcheck="false" /></div>' +
-        '<div class="ai-key-row"><input id="kb-relay-input" class="key-input" placeholder="Optional: Cloudflare relay URL (https://…workers.dev)" autocomplete="off" spellcheck="false" /></div>' +
-        '<p class="muted muted-xs">Sessions run through Kernel\'s CORS-open MCP endpoint (mcp.onkernel.com) — it works straight from GitHub Pages, no relay needed. The CDP WebSocket + live view also connect directly.</p>' +
+        '<div class="ai-key-row"><input id="kb-relay-input" class="key-input" placeholder="Relay URL — built-in default preloaded (your own worker optional)" autocomplete="off" spellcheck="false" /></div>' +
+        '<p class="muted muted-xs">Session REST goes through a Cloudflare relay (Kernel\'s API blocks direct browser calls) — the built-in one is preloaded and editable below. The CDP WebSocket + live view connect directly. Every run is deleted when it finishes.</p>' +
         '<div class="ai-key-row">' +
           '<button class="btn btn-primary btn-sm" id="kb-key-save">Save key</button>' +
           '<button class="btn btn-outline btn-sm" id="kb-key-reset">Clear override</button>' +
@@ -178,7 +178,7 @@
       var kbMode = $("#kb-mode", root), kbPrev = $("#kb-key-preview", root), kbOut = $("#kb-test-out", root);
       function kbRefresh() {
         var env = NB.kernelEnv ? NB.kernelEnv() : { mode: "?", key: "?" };
-        kbMode.textContent = env.mode + (env.relay ? " (via relay)" : "");
+        kbMode.textContent = env.mode + (env.relayCustom ? " (via your relay)" : env.relay ? " (via built-in relay)" : "");
         kbPrev.textContent = env.key === "custom" ? "your own key" : "built-in key";
       }
       kbRefresh();
@@ -196,31 +196,31 @@
         toast("Back to the built-in Kernel key.");
       });
       $("#kb-test", root).addEventListener("click", function () {
-        kbOut.textContent = "$ kernel --check … reaching Kernel MCP …";
+        kbOut.textContent = "$ kernel --check … pinging the relay…";
         kbOut.className = "ai-test-out pending";
         NB.kernelAgent.ready().then(function (ok) {
           if (ok) {
-            kbOut.textContent = "✓ Kernel reachable (MCP transport) — cloud browser ready for agent runs.";
+            kbOut.textContent = "✓ Kernel reachable (relay transport) — cloud browser ready for agent runs.";
             kbOut.className = "ai-test-out ok";
           } else {
             var why = NB.kernelProbeError ? NB.kernelProbeError() : "";
             if (NB.kernelProbeBlocked && NB.kernelProbeBlocked()) {
-              kbOut.textContent = "⚠ Kernel blocks direct browser calls (CORS) — this is a Kernel-side limitation, not a bug on your end.\nOne-time fix (2 min, free): deploy kernel-relay.js to Cloudflare Workers (file is in the repo), then paste the worker URL into the relay field below. Everything else keeps working meanwhile.";
+              kbOut.textContent = "⚠ The relay is unreachable from this browser — check your connection, or the relay URL in the field below. You can deploy your own kernel-relay.js to Cloudflare Workers and paste its URL there.";
             } else {
-              kbOut.textContent = "⚠ Kernel unreachable" + (why ? " — " + why : "") + ".\nCheck your connection, or the built-in key may be rate-limited. A relay URL below is still honored first.";
+              kbOut.textContent = "⚠ Kernel unreachable" + (why ? " — " + why : "") + ".\nCheck the relay URL below, your connection, or the built-in key may be rate-limited.";
             }
             kbOut.className = "ai-test-out err";
           }
         });
       });
-      /* relay input — same pattern as the AI relay field */
+      /* relay input — prefilled with the effective relay (built-in default shown) */
       var kbRelayInput = $("#kb-relay-input", root);
       if (kbRelayInput) {
         kbRelayInput.value = NB.getKernelRelay ? NB.getKernelRelay() : "";
         kbRelayInput.addEventListener("change", function () {
           var v = kbRelayInput.value.trim();
-          if (!v) { NB.setKernelRelay(""); toast("Kernel relay cleared — direct mode."); }
-          else { NB.setKernelRelay(v); toast("Kernel relay saved — it will be used for session REST."); }
+          if (!v) { NB.setKernelRelay(""); toast("Relay override cleared — using the built-in relay."); }
+          else { NB.setKernelRelay(v); toast("Kernel relay saved — sessions will run through it."); }
           kbRefresh();
         });
       }
