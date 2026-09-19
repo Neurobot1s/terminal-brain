@@ -535,6 +535,37 @@ textarea:focus-visible, [tabindex]:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
+/* ── smoothness: contain the app so scrolling only paints its layer ──
+   Fixed chrome (sidebar/topbar/footer) never needs repainting while the
+   page scrolls; `contain` lets the browser skip their layout+paint work
+   entirely. The scrolling element gets its own compositor layer so
+   wheel/touch scrolling is GPU-smooth instead of main-thread. */
+.sidebar, .topbar, .status-bar { contain: layout style paint; }
+#view.view {
+  contain: layout style;
+  will-change: scroll-position; /* promotes the scroller — cheap, one layer */
+  transform: translateZ(0);
+}
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body.reduce-motion { scroll-behavior: auto; }
+
+/* ── smoothness: contain the app so scrolling only paints its layer ──
+   Fixed chrome (sidebar/topbar/footer) never needs repainting while the
+   page scrolls; `contain` lets the browser skip their layout+paint work
+   entirely. The scrolling element itself gets its own compositor layer
+   so wheel/touch scrolling is GPU-smooth instead of main-thread. */
+.sidebar, .topbar, .status-bar { contain: layout style paint; }
+#view.view {
+  contain: layout style;
+  will-change: scroll-position; /* promotes the scroller — cheap, one layer */
+  transform: translateZ(0);
+}
+body.reduce-motion #view.view,
+@media (prefers-reduced-motion: reduce) { }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
 /* inputs: autofill keeps the dark theme */
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
   -webkit-text-fill-color: var(--text);

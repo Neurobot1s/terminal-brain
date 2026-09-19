@@ -64,7 +64,7 @@ window.sessionStorage.setItem("nb_credit", "1");
 for (const s of [...document.querySelectorAll("script")]) {
   try {
     if (s.src) {
-      const m = s.src.match(/js\/[a-z0-9-]*\.js$/);
+      const m = String(s.getAttribute("src") || "").split("?")[0].match(/js\/[a-z0-9-]*\.js$/); /* tolerate ?v= cache-busters */
       if (m) window.eval(fs.readFileSync(path.join(ROOT, m[0]), "utf8"));
       else continue;
     } else if (s.textContent.trim()) window.eval(s.textContent);

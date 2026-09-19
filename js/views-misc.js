@@ -203,7 +203,8 @@
             kbOut.textContent = "✓ Kernel reachable (MCP transport) — cloud browser ready for agent runs.";
             kbOut.className = "ai-test-out ok";
           } else {
-            kbOut.textContent = "⚠ Kernel unreachable — check your connection, or the built-in key may be rate-limited. A relay URL below is still honored first.";
+            var why = NB.kernelProbeError ? NB.kernelProbeError() : "";
+            kbOut.textContent = "⚠ Kernel unreachable" + (why ? " — " + why : "") + ".\nCheck your connection, or the built-in key may be rate-limited. A relay URL below is still honored first.";
             kbOut.className = "ai-test-out err";
           }
         });

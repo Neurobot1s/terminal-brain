@@ -31,7 +31,8 @@ let inline = 0, external = 0;
 for (const s of scripts) {
   try {
     if (s.src) {
-      const m = s.src.match(/js\/[a-z0-9-]*\.js$/);
+      const file = String(s.getAttribute("src") || "").split("?")[0]; /* tolerate ?v= cache-busters */
+      const m = file.match(/js\/[a-z0-9-]*\.js$/);
       if (!m) continue;
       const code = fs.readFileSync(path.join(ROOT, m[0]), "utf8");
       window.eval(code);

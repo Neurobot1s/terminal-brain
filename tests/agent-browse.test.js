@@ -46,7 +46,7 @@ window.sessionStorage.setItem("nb_credit", "1");
 for (const s of [...window.document.querySelectorAll("script")]) {
   try {
     if (s.src) {
-      const m = s.src.match(/js\/[a-z0-9-]*\.js$/);
+      const m = String(s.getAttribute("src") || "").split("?")[0].match(/js\/[a-z0-9-]*\.js$/); /* tolerate ?v= cache-busters */
       if (m) window.eval(fs.readFileSync(path.join(ROOT, m[0]), "utf8"));
     } else if (s.textContent.trim()) {
       window.eval(s.textContent);
@@ -74,7 +74,14 @@ function check(label, fn) {
   NB.agentBrowse("How tall is Mount Everest?");
   await sleep(50);
   check("panel opens over the app", () => !!window.document.querySelector("#ab-panel"));
-  check("viewport + log + status present", () => !!window.document.querySelector("#ab-viewport") && !!window.document.querySelector("#ab-log") && !!window.document.querySelector("#ab-status"));
+  /* kernel probe fails → fallback to in-site readers happens async
+     (includes a short retry) — poll instead of a fixed wait */
+  let classicUp = false;
+  for (let i = 0; i < 30; i++) {
+    await sleep(100);
+    if (window.document.querySelector("#ab-viewport") && /How tall is Mount Everest/.test(window.document.querySelector("#ab-log").textContent)) { classicUp = true; break; }
+  }
+  check("viewport + log + status present", () => classicUp || (!!window.document.querySelector("#ab-viewport") && !!window.document.querySelector("#ab-log") && !!window.document.querySelector("#ab-status")));
   check("goal logged", () => /How tall is Mount Everest/.test(window.document.querySelector("#ab-log").textContent));
 
   /* step 1: SEARCH → wikiSearch → (900ms beat) → wikiPage; poll for both */

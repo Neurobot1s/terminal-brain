@@ -127,26 +127,33 @@
         });
       }
       return r.text().then(function (txt) {
-        /* SSE: possibly several `data:` lines — keep the last parseable one */
+        /* The MCP server usually answers SSE (`data: {jsonrpc}` frames) but
+           SOME deployments/proxies reply with a single plain-JSON body.
+           Handle both: try the whole body as JSON first, then line-scan. */
         var data = null, errObj = null;
-        var lines = txt.split("\n");
-        for (var i = 0; i < lines.length; i++) {
-          var l = lines[i];
-          if (l.indexOf("data:") !== 0) continue;
-          var body = l.slice(5).trim();
-          if (!body) continue;
-          try {
-            var j = JSON.parse(body);
-            if (j.error) errObj = j.error;
-            else data = j;
-          } catch (e) { /* non-JSON keepalive line */ }
+        var t = String(txt || "").trim();
+        if (t) {
+          try { var whole = JSON.parse(t); if (whole.error) errObj = whole.error; else data = whole; } catch (e) {}
+        }
+        if (!data && !errObj) {
+          var lines = t.split("\n");
+          for (var i = 0; i < lines.length; i++) {
+            var l = lines[i];
+            if (l.indexOf("data:") !== 0) continue;
+            var body = l.slice(5).trim();
+            if (!body) continue;
+            try {
+              var j = JSON.parse(body);
+              if (j.error) errObj = j.error;
+              else data = j;
+            } catch (e2) { /* non-JSON keepalive line */ }
+          }
         }
         if (errObj) {
-          var e2 = new Error(errObj.message || "kernel mcp error");
-          e2.status = errObj.code;
-          throw e2;
+          var e3 = new Error(errObj.message || "kernel mcp error");
+          e3.status = errObj.code;
+          throw e3;
         }
-        if (payload && payload.method === "initialize") return { sid: sid, data: data };
         return { sid: sid, data: data };
       });
     }).catch(function (e) {
@@ -509,10 +516,20 @@
       var now = Date.now();
       if (readyPromise && now - readyAt < 300000) return readyPromise;
       readyAt = now;
-      readyPromise = mcpBrowsers({ action: "list" }).then(function () { return true; }).catch(function () {
-        readyPromise = null; readyAt = 0;
-        return false;
-      });
+      readyPromise = mcpBrowsers({ action: "list" })
+        .then(function () { readyError = ""; return true; })
+        .catch(function (e) {
+          /* one transparent retry with a brand-new MCP handshake before
+             giving up — guards against a stale session-id killing the probe */
+          readyPromise = null; readyAt = 0;
+          mcpSession = ""; mcpReadyPromise = null;
+          return sleep(450).then(function () {
+            return mcpBrowsers({ action: "list" });
+          }).then(function () { readyError = ""; return true; }).catch(function (e2) {
+            readyError = (e2 && e2.message) || (e && e.message) || "unreachable";
+            return false;
+          });
+        });
       return readyPromise;
     },
 
@@ -584,6 +601,10 @@
     var custom = !!lsGet(KEY_LS);
     return { mode: NB.kernelMode(), key: custom ? "custom" : "built-in", relay: relayBase(), transport: relayBase() ? "relay" : "mcp" };
   };
+
+  /* last probe failure, for the Settings diagnostic */
+  var readyError = "";
+  NB.kernelProbeError = function () { return readyError; };
 
   /* tests */
   var readyPromise = null, readyAt = 0;

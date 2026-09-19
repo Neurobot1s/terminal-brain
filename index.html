@@ -16,9 +16,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="styles.polish.css" />
-    <link rel="stylesheet" href="styles.perf.css" />
+    <link rel="stylesheet" href="styles.css?v=20260919" />
+    <link rel="stylesheet" href="styles.polish.css?v=20260919" />
+    <link rel="stylesheet" href="styles.perf.css?v=20260919" />
     <!-- Global error guard: never show a silent blank page -->
     <script>
       window.addEventListener("error", function (e) {
@@ -105,20 +105,23 @@
     <div id="term-root"></div>
     <div id="toast-root"></div>
 
-    <!-- Classic scripts, dependency order — works on file:// and any static host -->
-    <script src="js/core.js"></script>
-    <script src="js/core-part2.js"></script>
-    <script src="js/prefs.js"></script>
-    <script src="js/ai.js"></script>
-    <script src="js/views-dashboard.js"></script>
-    <script src="js/views-collections.js"></script>
-    <script src="js/views-kanban.js"></script>
-    <script src="js/views-misc.js"></script>
-    <script src="js/kernel.js"></script>
-    <script src="js/agent-browse.js"></script>
-    <script src="js/voice.js"></script>
-    <script src="js/main.js"></script>
-    <script src="js/terminal.js"></script>
-    <script src="js/fx.js"></script>
+    <!-- Classic scripts, dependency order — works on file:// and any static host.
+         ?v= cache-buster: browsers must never reuse an older cached kernel.js
+         (the transport changed from REST to MCP — stale copies show "kernel
+         unreachable" forever). Bump the version whenever kernel.js changes. -->
+    <script src="js/core.js?v=20260919"></script>
+    <script src="js/core-part2.js?v=20260919"></script>
+    <script src="js/prefs.js?v=20260919"></script>
+    <script src="js/ai.js?v=20260919"></script>
+    <script src="js/views-dashboard.js?v=20260919"></script>
+    <script src="js/views-collections.js?v=20260919"></script>
+    <script src="js/views-kanban.js?v=20260919"></script>
+    <script src="js/views-misc.js?v=20260919"></script>
+    <script src="js/kernel.js?v=20260919b"></script>
+    <script src="js/agent-browse.js?v=20260919"></script>
+    <script src="js/voice.js?v=20260919"></script>
+    <script src="js/main.js?v=20260919"></script>
+    <script src="js/terminal.js?v=20260919"></script>
+    <script src="js/fx.js?v=20260919"></script>
   </body>
 </html>
