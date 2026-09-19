@@ -3,7 +3,39 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
-## Current state (2026-09-19) — ALL GREEN, CLOUD BROWSER LIVE
+## Current state (2026-09-19, Round 5) — ALL GREEN, SCROLL/TOUCH/KERNEL-AGENT HARDENED
+All 8 test suites pass (`boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`). All 14 JS files `node --check` clean; all 3 CSS files brace-balanced. Cache-busters bumped to `?v=20260919e`.
+
+**Live verification this round:** kernel relay E2E (POST /browsers → CDP WS → Page.navigate example.com → title "Example Domain" → closeTarget → DELETE → 204) ALL PASS. Relay session list = `[]` after runs (zero leaks). NVIDIA NVCF `/functions` discovery → 200, `ai-gpt-oss-20b` ACTIVE — the agent's brain is alive.
+
+## Round 5 — "can't scroll" + "mobile zoom glitches" + agent does REAL work
+
+### 1. Scrolling (fixed for real this time — three causes)
+- **`html { scroll-behavior: smooth }` REMOVED** (was declared in styles.perf.css, plus a duplicate in prefs path). Every wheel/keyboard/anchor scroll was re-animated as a glide that lagged the finger and fought momentum. Native scrolling is what actually feels smooth. `body.reduce-motion` honor kept.
+- **`overscroll-behavior: contain` removed from `#view`** — the WINDOW is the scroller, so this only disabled the page's own bounce and made the page feel locked. Kept on real inner scrollers (.nav/.modal/.term-out/.live-thread/.cmdk-list/.ab-log).
+- **Route transition de-transformed:** `routeIn` no longer animates `translateY+scale` (it rasterized the page-height view into a fresh GPU layer on EVERY navigation → visible hitch at scroll start). Opacity-only crossfade now.
+- **`min-height: 100vh → 100dvh`** on .app/.main/.sidebar (with @supports fallback): mobile URL bars shrink/grow; 100vh froze the layout at the taller height leaving dead space + trapped gestures.
+- Desktop-only `overscroll-behavior-y: none` on body (kills pull-to-refresh hijack mid-read; touch devices keep native bounce).
+
+### 2. Mobile zoom glitches (fixed)
+- **Scrim blur removed** (styles.css): `backdrop-filter: blur(2px)` on the drawer scrim forced whole-page re-rasters and glitched pinch-zoom on iOS.
+- **fx.js swipe handler hardened:** bails when the drawer is open (taps near the screen edge were mis-aimed by the shifted viewport and hit rows behind the drawer — felt like the app "zooming/glitching"); bails mid-gesture if drawer opens; second-finger join releases instantly (existing).
+- 16px form inputs on touch were already in place (iOS focus auto-zoom) — verified still effective after the CSS layering changes.
+- Palette arrow-nav no longer yanks the page: replaced `scrollIntoView({block:nearest})` with a manual list-internal scroll (main.js).
+
+### 3. Kernel agent does REAL work (agent-browse.js + kernel.js)
+- **`NEXT WAIT n` action** (1–5s, budget 3) — the model can now wait out navigation/modals instead of failing "element missing".
+- **Loop context upgraded:** model now sees CURRENT URL, first 500 chars of PAGE TEXT, and top 6 resolved LINKS (title → url) every step. Bare-title `OPEN Mount Everest` resolves against those links (search result pages show URLs only in hrefs — this was why it couldn't follow results).
+- **DDG html endpoint** (`html.duckduckgo.com/html/`) replaces the JS lite page that often rendered blank under CDP; search results now go through the rich extractor + render in the reader panel.
+- **MAX_STEPS 14 → 18** and the system prompt gained 6 workflow rules (use CLICK/TYPE/KEY for doing-tasks; WAIT-then-relook; READ for content; never OPEN the current page; no repeated failing steps; ANSWER as soon as done). Temp-mail flow guidance kept.
+- **Relay path now retries once on vanished sessions** (the reported "browser session closed after error") — mirrors the managed path: clean delete, 400ms, fresh browser, bounded (no loops). Logged honestly.
+- Prompt fix note: regex edits inside agent-browse.js must be written as literal text — the file contains `\\s` etc.; tool-escaped variants silently miss (hit once this round, caught by re-grep).
+
+### Kernel transport facts (unchanged, verified live again)
+- Built-in relay `BUILTIN_RELAY` in js/kernel.js (the jolly-breeze worker) — authenticated list/create/delete verified this round. Sessions: 72h timeout, created fresh per run, DELETED on finish (relay list shows `[]` after the E2E run).
+- MCP transport stays wired as no-relay fallback but is CORS-blocked in browsers (no ACAO on POST responses) — do not remove the relay.
+
+## Current state (2026-09-19, Round 4) — ALL GREEN, CLOUD BROWSER LIVE
 All 8 test suites pass: `boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`. All 14 JS files syntax-clean (`node --check`). All 3 CSS files brace-balanced. Cache-busters bumped to `?v=20260919d` (index.html).
 
 **Cloud-browser runs are LIVE end-to-end.** Verified 2026-09-19 with a real smoke test (create → CDP WebSocket → navigate example.com → read title → close tab → delete, all through the relay): ALL PASS. A deployed relay is now BUILT IN (`BUILTIN_RELAY` in js/kernel.js) — zero setup for users.

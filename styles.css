@@ -128,7 +128,9 @@ a { color: var(--accent); text-decoration: none; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
 
 /* ═══ scrim + topbar ═══ */
-.scrim { display: none; position: fixed; inset: 0; z-index: 35; background: rgba(4, 6, 12, 0.55); backdrop-filter: blur(2px); }
+/* scrim: NO backdrop-filter — the blurred layer behind the drawer forces a
+   re-raster of the whole page every frame and glitches pinch-zoom on iOS. */
+.scrim { display: none; position: fixed; inset: 0; z-index: 35; background: rgba(4, 6, 12, 0.55); }
 .scrim.show { display: block; }
 .topbar {
   position: sticky; top: 0; z-index: 30;

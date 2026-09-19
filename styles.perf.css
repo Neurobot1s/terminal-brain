@@ -36,9 +36,23 @@
    NOTE: .view must NEVER become a scroll container. The WINDOW is the
    scroller (.view is an unconstrained flex child and simply grows with
    its content — an overflow-y on it creates a zero-height scroller that
-   traps touch gestures = "can't scroll on any page"). */
+   traps touch gestures = "can't scroll on any page").
+
+   SCROLL FIX (Round 5): the two remaining scroll killers were
+   a) html { scroll-behavior: smooth } — every wheel/keyboard/anchor
+      scroll was re-animated as a glide; on trackpads it lagged the
+      finger and fought momentum scrolling. Removed — native
+      momentum (rubber-band on iOS, smooth fling on Android) is what
+      actually feels smooth.
+   b) overscroll-behavior: contain on #view — the WINDOW is the
+      scroller here, so chaining was never the problem; the rule only
+      disabled the page's own bounce/rubber-band feel. Kept ONLY on
+      real inner scrollers (modal/terminal/palette/thread/log). */
+html { scroll-behavior: auto; }
 * { -webkit-tap-highlight-color: transparent; }
-a, button, .row-btn, .row-del, .pin-btn, .modal-close, .qc-btn, .icon-btn {
+/* the page itself keeps native pan + pinch-zoom: no global touch-action */
+a, button, .row-btn, .row-del, .pin-btn, .modal-close, .qc-btn, .icon-btn,
+.kanban-col, .mem-card, .stat-card, .panel, .graph-wrap, .ab-wrap, .chip {
   touch-action: manipulation; /* kill 300ms double-tap-zoom delay on iOS */
 }
 [hidden] { display: none !important; }
@@ -482,9 +496,13 @@ textarea:focus-visible, [tabindex]:focus-visible {
   }
 }
 
-/* route change: one soft push (transform+opacity only, compositor-cheap) */
-.view.route-in { animation: routeIn 0.34s var(--spring) both; }
-@keyframes routeIn { from { opacity: 0; transform: translateY(9px) scale(0.996); } to { opacity: 1; transform: none; } }
+/* route change: pure opacity crossfade (Round 5: the old keyframe
+   animated transform: translateY+scale, which rasterizes the whole
+   page-height view into a fresh GPU layer EVERY navigation — visible
+   hitch at the start of each scroll on mid phones. Opacity-only is
+   compositor-cheap and never touches layout. */
+.view.route-in { animation: routeIn 0.28s var(--ease) both; }
+@keyframes routeIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* press feedback — the iOS “button gives under the thumb” feel */
 .btn:active, .icon-btn:active, .qc-btn:active, .row-btn:active, .chip:active,
@@ -512,6 +530,30 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .graph-edge { animation: none; }
 @media (hover: hover) { .graph-edge { animation: edgeflow 2.6s linear infinite; } }
 
+/* Round 5 — SCROLL HYGIENE (why the whole page felt locked):
+   • body::before is position:fixed and must never intercept touches —
+     it also stopped being a scroll-repaint source (fixed layers don't
+     repaint on scroll, but pointer-events:none makes that a guarantee).
+   • No ancestor of the page content may own a transform/containment
+     that turns it into a containing block for position:fixed — fixed
+     chrome would scroll away with the page. The app grid is clean.
+   • 100vh → 100dvh: mobile URL bars shrink/grow; 100vh freezes the
+     layout at the LARGER height and leaves dead space / trapped
+     gestures at the bottom of the viewport. */
+body::before { pointer-events: none; }
+.app, .main { min-height: 100dvh; }
+@supports not (height: 100dvh) {
+  .app, .main { min-height: 100vh; }
+}
+.sidebar { height: 100dvh; }
+@supports not (height: 100dvh) {
+  .sidebar { height: 100vh; }
+}
+/* desktop-only guard: no pull-to-refresh hijacks the page mid-read */
+@media (hover: hover) and (pointer: fine) {
+  body { overscroll-behavior-y: none; }
+}
+
 /* modals: iOS sheet on phones, centered card everywhere else */
 @keyframes sheetUp { from { transform: translateY(64px); opacity: 0.4; } }
 @media (max-width: 640px) {
@@ -531,8 +573,11 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .toast { animation: toastIn 0.32s var(--spring); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
 
-/* scroll containers: no scroll-chaining pop-outs, momentum on touch */
-.view, .nav, .live-thread, .modal, .term-out, .cmdk-list, .ab-log {
+/* scroll containers: momentum on touch, no scroll-chaining pop-outs.
+   #view is deliberately NOT listed — the WINDOW is the scroller and
+   overscroll-behavior on it only disables the page's own bounce.
+   (Round 5: .view removed — it made the whole page feel locked.) */
+.nav, .live-thread, .modal, .term-out, .cmdk-list, .ab-log {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
@@ -547,9 +592,8 @@ textarea:focus-visible, [tabindex]:focus-visible {
 .sidebar, .topbar, .status-bar { contain: layout style paint; }
 #view.view { contain: layout style; }
 body.reduce-motion #view.view { contain: none; }
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body.reduce-motion { scroll-behavior: auto; }
+/* (Round 5: html scroll-behavior removed — native scrolling only.
+   The declarations that lived here are superseded by §2 above.) */
 
 /* inputs: autofill keeps the dark theme */
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {

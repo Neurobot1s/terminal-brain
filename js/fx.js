@@ -46,12 +46,19 @@
     if (e.touches.length !== 1) return; /* pinch (2+ fingers) — never intercept */
     var row = e.target.closest && e.target.closest(".activity-row, .notif-row");
     if (!row) return;
+    /* drawer open → taps near the page edge would be mis-aimed by the
+       shifted viewport and hit-test rows behind the drawer: bail */
+    if (document.querySelector(".app.side-open")) return;
     var t = e.touches[0];
     var sx = t.clientX, sy = t.clientY, tracked = false, open = row.classList.contains("swipe-open");
     function move(ev) {
       /* a second finger joined → this became a pinch/zoom — release the gesture
-         immediately or the browser's zoom stalls and the page "glitches" */
+         immediately or the browser's zoom stalls and the page "glitches".
+         (Round 5: also bail on big vertical intent + when the drawer opens
+         mid-gesture, and never preventDefault before horizontal intent is
+         locked — vertical pan must stay owned by the page.) */
       if (ev.touches.length !== 1) { cleanup(); row.classList.remove("swiping"); return; }
+      if (document.querySelector(".app.side-open")) { cleanup(); row.classList.remove("swiping"); return; }
       if (!tracked) {
         var dx = ev.touches[0].clientX - sx, dy = ev.touches[0].clientY - sy;
         if (Math.abs(dx) < 14) return; /* wait for clear intent */
@@ -82,6 +89,7 @@
   /* tapping anywhere else closes an open swipe */
   document.addEventListener("touchstart", function (e) {
     if (e.target.closest && e.target.closest(".activity-row .row-del, .notif-row .row-del")) return;
+    if (document.querySelector(".app.side-open")) return;
     var openRow = document.querySelector(".activity-row.swipe-open, .notif-row.swipe-open");
     if (openRow && !(e.target.closest && e.target.closest(".activity-row, .notif-row") === openRow)) {
       openRow.classList.remove("swipe-open");

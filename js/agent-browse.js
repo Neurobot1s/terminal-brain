@@ -191,7 +191,7 @@
   function foot(t) { var f = document.querySelector("#ab-foot"); if (f) f.textContent = t; }
 
   /* ---------- the agent loop ---------- */
-  var MAX_STEPS = 14;
+  var MAX_STEPS = 18; /* real tasks (sign-up flows) need room */
 
   /* ---------- real-interaction helpers (drive the cloud browser) ----------
      The model works with VISIBLE TEXT ("Sign in", "email"), not raw CSS —
@@ -201,6 +201,14 @@
     return d.eval("JSON.stringify((function(){function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}var out=[];try{document.querySelectorAll('input,textarea,select').forEach(function(e){if(!vis(e)||out.length>18)return;out.push({k:'field',t:e.tagName.toLowerCase(),type:e.type||'',ph:e.placeholder||e.getAttribute('aria-label')||e.name||e.id||'',v:String(e.value||'').slice(0,30)});});document.querySelectorAll('button,[role=button],input[type=submit],input[type=button],a').forEach(function(e){if(!vis(e)||out.length>40)return;var tx=(e.innerText||e.value||e.getAttribute('aria-label')||'').trim().slice(0,40);if(tx)out.push({k:/^a$/i.test(e.tagName)?'link':'btn',tx:tx});});}catch(e){}return out;})())")
       .then(function (s) { try { return JSON.parse(s); } catch (e) { return []; } })
       .catch(function () { return []; });
+  }
+  /* where is the cloud browser right now? (prevents OPEN-the-same-page
+     loops and lets the model reason about the site it's on) */
+  function currentUrl(d) {
+    return Promise.resolve()
+      .then(function () { return d.eval("location.href"); })
+      .then(function (u) { return String(u || ""); })
+      .catch(function () { return ""; });
   }
   function resolveAndClick(d, arg) {
     return d.eval("(function(){var arg=" + JSON.stringify(arg) + ";function norm(s){return String(s||'').toLowerCase().replace(/\\s+/g,' ').trim();}var el=null;try{el=document.querySelector(arg);}catch(e){}if(!el){var c=document.querySelectorAll('button,[role=button],input[type=submit],input[type=button],a,label');for(var i=0;i<c.length;i++){var e=c[i];var tx=norm(e.innerText||e.value||e.getAttribute('aria-label')||e.title);if(tx&&e.getBoundingClientRect().width>0&&(tx===norm(arg)||tx.indexOf(norm(arg))>-1||(norm(arg).indexOf(tx)>-1&&tx.length>3))){el=e;break;}}}if(!el)return JSON.stringify({ok:false});try{el.scrollIntoView({block:'center'});}catch(e2){}var r=el.getBoundingClientRect();var o={bubbles:true,cancelable:true,view:window,clientX:r.left+r.width/2,clientY:r.top+r.height/2};try{el.dispatchEvent(new PointerEvent('pointerdown',o));el.dispatchEvent(new MouseEvent('mousedown',o));el.dispatchEvent(new PointerEvent('pointerup',o));el.dispatchEvent(new MouseEvent('mouseup',o));}catch(e3){}el.click();return JSON.stringify({ok:true,label:(el.innerText||el.value||el.getAttribute('aria-label')||'').trim().slice(0,40)});})()")
@@ -213,6 +221,15 @@
       .catch(function () { return { ok: false }; });
   }
   function settleIf(d) { try { if (d.settle) return d.settle().catch(function () {}); } catch (e) {} return Promise.resolve(); }
+
+  /* top navigation-worthy links of the current page (resolved + decoded).
+     Search-results pages show titles in text but URLs only in hrefs —
+     without this the model can see results but can't OPEN them. */
+  function collectLinks(d, cap) {
+    return d.eval("JSON.stringify((function(){var out=[];try{document.querySelectorAll('a').forEach(function(a){if(out.length>=" + (cap || 8) + ")return;var t=String(a.innerText||'').trim();var h=String(a.href||'');if(!t||t.length<25||h.indexOf('http')!==0)return;if(h.indexOf('uddg=')>-1){try{h=decodeURIComponent(h.split('uddg=')[1].split('&')[0]);}catch(e){}}if(h.indexOf('http')!==0||h.indexOf('duckduckgo.com')>-1)return;out.push({t:t.slice(0,90),h:h.slice(0,220)});});}catch(e){}return out;})())")
+      .then(function (s) { try { return JSON.parse(s) || []; } catch (e) { return []; } })
+      .catch(function () { return []; });
+  }
 
   /* when the loop ends without an explicit ANSWER — or the model emits an
      unclear step — compose the best answer from everything gathered so the
@@ -254,19 +271,22 @@
     var K = (window.NB && NB.__kernelInternals) || {};
     var extract = K.extractPageText || function (d2, m) { return d2.text("body").then(function (t) { return { title: "", url: "", text: String(t || "").slice(0, m || 3600) }; }); };
     var sweep = K.sweepPage || function () { return Promise.resolve(); };
+    var waited = 0; /* WAIT uses: model can't retry it forever */
     function step(n, d) {
       if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
       status("step " + n + "/" + MAX_STEPS);
       foot("thinking with your local NVIDIA model…");
-      return pageContext(d).then(function (elems) {
+      return Promise.all([pageContext(d), currentUrl(d), extract(d, 1200).catch(function () { return null; }), collectLinks(d, 6)]).then(function (ctx) {
+        var elems = ctx[0], here = ctx[1] || "", snap = ctx[2] || null, links = ctx[3] || [];
         var elemLines = (elems || []).slice(0, 30).map(function (e) {
           return e.k === "field" ? "  field " + e.t + "[" + e.type + "] “" + e.ph + "”" + (e.v ? " = " + e.v : "")
             : "  " + e.k + " “" + e.tx + "”";
         }).join("\n");
+        var linkLines = links.map(function (l) { return "  " + l.t + " → " + l.h; }).join("\n");
         return think(
-          "You are agentBrowse, an autonomous web agent inside NeuroBot that DRIVES a real cloud browser. " +
+          "You are agentBrowse, an autonomous web agent inside NeuroBot that DRIVES a real cloud browser to COMPLETE the user's task. " +
           "ALWAYS reply in English. " +
-          "You can both research AND interact with pages (sign-ups, logins, forms, buttons).\n" +
+          "You can research AND interact: log in, fill forms, click buttons, submit.\n" +
           "Reply with EXACTLY one line, one of:\n" +
           "NEXT SEARCH mount everest height\n" +
           "NEXT OPEN https://en.wikipedia.org/wiki/Mount_Everest\n" +
@@ -274,20 +294,30 @@
           "NEXT CLICK Sign in\n" +
           "NEXT TYPE email :: you@temp-mail.io\n" +
           "NEXT KEY Enter\n" +
+          "NEXT WAIT 2\n" +
           "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
           "SEARCH = web search, OPEN = navigate, READ = extract page text, CLICK = click a button/link by its visible text, " +
           "TYPE = fill a form field (field-name :: text — field-name can be email/password/username/search or the placeholder), " +
-          "KEY = press Enter to submit, ANSWER = stop and answer.\n" +
-          "For tasks that require DOING something (create an account, sign in, submit a form), you MUST use CLICK/TYPE/KEY — OPEN/READ alone cannot complete them. " +
-          "Temporary-email flows: OPEN a temp-mail site, READ the address, TYPE it into the sign-up form, KEY Enter, then OPEN/READ the inbox again for the confirmation code. " +
-          "Start with SEARCH or OPEN. Use ANSWER as soon as the steps let you. No other text.",
+          "KEY = press Enter to submit, WAIT = pause 1-5s for navigation/modals to settle, ANSWER = stop and answer.\n" +
+          "WORKFLOW RULES:\n" +
+          "1) For tasks that require DOING something (create an account, sign in, submit a form), you MUST use CLICK/TYPE/KEY — OPEN/READ alone cannot complete them.\n" +
+          "2) If an element you need is missing or a page just changed, use WAIT once and re-look.\n" +
+          "3) READ the page when you need its content — element labels alone are not the content.\n" +
+          "4) Never OPEN the page you are already on (see CURRENT URL).\n" +
+          "5) Do not repeat a step that already failed the same way.\n" +
+          "6) When everything needed is done or learned, ANSWER immediately — report what you did/found.\n" +
+          "Temporary-email flows: OPEN a temp-mail site, READ the address, TYPE it into the sign-up form, KEY Enter, WAIT, then OPEN/READ the inbox again for the confirmation code. " +
+          "Start with SEARCH or OPEN. No other text.",
           "QUESTION: " + query +
+          "\n\nCURRENT URL: " + (here || "(unknown)") +
+          "\n\nPAGE TEXT (first 500 chars):\n" + (snap && String(snap.text || "").replace(/\s+/g, " ").trim().slice(0, 500) || "(unavailable)") +
+          "\n\nLINKS ON THIS PAGE (title → url):\n" + (linkLines || "(none)") +
           "\n\nCURRENT PAGE ELEMENTS:\n" + (elemLines || "(none detected)") +
           "\n\nSTEPS SO FAR:\n" + (steps.length ? steps.join("\n") : "(none yet)"),
           220
         );
       }).then(function (raw) {
-        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|CLICK|TYPE|KEY|ANSWER)\s*:?\s*([\s\S]+)$/i);
+        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|CLICK|TYPE|KEY|WAIT|ANSWER)\s*:?\s*([\s\S]+)$/i);
         if (!m) { log("model step unclear — answering from what was gathered", "warn"); return bestEffortAnswer(query, steps, lastPage); }
         var action = m[1].toUpperCase(), arg = m[2].trim();
         if (action === "ANSWER") {
@@ -318,6 +348,14 @@
             return sleep(400).then(function () { return step(n + 1, d); });
           });
         }
+        if (action === "WAIT") {
+          var secs = Math.min(5, Math.max(1, parseFloat(arg) || 2));
+          if (waited >= 3) { log("WAIT budget spent — moving on", "warn"); return step(n + 1, d); }
+          waited++;
+          log("waiting " + secs + "s for the page to settle", "act");
+          foot("cloud browser → wait");
+          return sleep(secs * 1000).then(function () { return step(n + 1, d); });
+        }
         if (action === "KEY") {
           var key = (arg || "Enter").trim() || "Enter";
           log("pressing " + key, "act");
@@ -330,12 +368,18 @@
         if (action === "SEARCH") {
           log("searching the web for “" + arg + "”", "act");
           foot("cloud browser → search");
-          return d.goto("https://duckduckgo.com/?q=" + encodeURIComponent(arg)).then(function () {
+          /* html.duckduckgo.com is the static-results endpoint — the JS
+             lite page often renders blank under CDP navigation */
+          return d.goto("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(arg)).then(function () {
             return sleep(800);
-          }).then(function () { return d.text("#links"); }).then(function (t) {
-            t = String(t || "").replace(/\s+/g, " ").trim().slice(0, 2400);
+          }).then(function () {
+            return extract(d, 2400);
+          }).then(function (p) {
+            var t = String((p && p.text) || "").replace(/\s+/g, " ").trim().slice(0, 2400);
             if (!t) throw new Error("empty results");
+            lastPage = p;
             steps.push("SEARCH “" + arg + "” → " + t.slice(0, 500));
+            showPage({ title: "Search: " + arg, body: t.slice(0, 600) }, { url: "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(arg) });
             return sleep(700).then(function () { return step(n + 1, d); });
           }).catch(function (e) {
             log("search failed (" + (e.message || "error") + ") — trying direct step", "err");
@@ -344,6 +388,13 @@
         }
         if (action === "OPEN" || action === "READ") {
           var url = /^(https?:)?\/\//.test(arg) ? arg : "https://" + arg.replace(/^\/+/, "");
+          /* model pasted a bare title → resolve it from the page's links */
+          if (!/^https?:\/\//i.test(arg)) {
+            var wanted = arg.toLowerCase().replace(/^\/+/, "");
+            var hit = links.find(function (l) { return (l.t || "").toLowerCase() === wanted; })
+              || links.find(function (l) { return (l.t || "").toLowerCase().indexOf(wanted) > -1; });
+            if (hit) { url = hit.h; arg = hit.t; log("resolved “" + hit.t + "” → " + hit.h, "ok"); }
+          }
           log((action === "READ" ? "reading " : "opening ") + url, "act");
           foot("cloud browser → " + url.replace(/^https?:\/\//, "").slice(0, 40));
           return d.goto(url).then(function () { return sleep(500); })

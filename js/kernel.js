@@ -471,7 +471,8 @@
      The relay forwards the Authorization header to Kernel, so every
      REST call MUST carry it (verified live: without it Kernel answers
      401 "Authentication token required"). */
-  function openRelayDriver(onSession) {
+  function openRelayDriver(onSession, attempt, log2) {
+    attempt = attempt || 1;
     var auth = { "Authorization": "Bearer " + apiKey(), "Content-Type": "application/json" };
     function relayFetch(url, opts) {
       var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -517,6 +518,13 @@
       }).catch(function (err) {
         /* browser/WS failed after creation — don't leak the session */
         try { fetch(relayBase() + "/browsers/" + s.session_id, { method: "DELETE", headers: auth, keepalive: true }).catch(function () {}); } catch (e2) {}
+        /* a brand-new session can briefly 404/race at the WS layer
+           ("session closed after error") — ONE retry with a fresh
+           browser, mirroring the managed path. Bounded: no loops. */
+        if (attempt < 2 && !(err && err.fatal)) {
+          if (log2) log2("browser session vanished (" + (err && err.message || "error") + ") — spinning up a new one", "warn");
+          return sleep(400).then(function () { return openRelayDriver(onSession, attempt + 1); });
+        }
         throw err;
       });
     });
@@ -698,7 +706,7 @@
       }
       if (relayBase()) {
         var relayStarted = Date.now();
-        return openRelayDriver(onSession).then(function (driver) {
+        return openRelayDriver(onSession, 1, log).then(function (driver) {
           return Promise.resolve().then(function () { return job(driver, log); }).then(
             function (out) { return driver.close().then(function () { return out; }); },
             function (err) { return driver.close().then(function () { throw err; }); }

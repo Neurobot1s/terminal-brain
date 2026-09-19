@@ -159,7 +159,11 @@
       else items[idx].classList.remove("sel");
       idx = (idx + dir + items.length) % items.length;
       items[idx].classList.add("sel");
-      items[idx].scrollIntoView({ block: "nearest" });
+      /* block:nearest on the window scroller yanks the whole page — keep the
+         scroll inside the palette list itself */
+      var lr = list.getBoundingClientRect(), ir = items[idx].getBoundingClientRect();
+      if (ir.top < lr.top) list.scrollTop -= lr.top - ir.top;
+      else if (ir.bottom > lr.bottom) list.scrollTop += ir.bottom - lr.bottom;
     }
     function pick() {
       var sel = $(".cmdk-item.sel", list);
