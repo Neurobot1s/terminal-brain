@@ -120,8 +120,23 @@
         '<span class="ab-title">agentBrowse</span>' +
         '<span class="ab-mode" id="ab-mode">' + (kernelOn ? "☁ kernel" : "reader") + "</span>" +
         '<span class="ab-status" id="ab-status">idle</span>' +
-        '<button class="btn btn-outline btn-sm" id="ab-close">Close</button>' +
+        '<span class="ab-actions">' +
+          (kernelOn ? '<button class="btn btn-outline btn-sm" id="ab-view-btn" title="Browser view — zoom, mobile width, fullscreen">⛶ View</button>' : "") +
+          '<button class="btn btn-outline btn-sm" id="ab-close">Close</button>' +
+        "</span>" +
       "</div>" +
+      (kernelOn
+        ? '<div class="ab-menu" id="ab-menu" hidden>' +
+            '<button class="ab-menu-item" data-ab-zoom="out">−&nbsp;&nbsp;Zoom out</button>' +
+            '<button class="ab-menu-item" data-ab-zoom="reset">◻&nbsp;&nbsp;100%</button>' +
+            '<button class="ab-menu-item" data-ab-zoom="in">+&nbsp;&nbsp;Zoom in</button>' +
+            '<div class="ab-menu-sep"></div>' +
+            '<button class="ab-menu-item" data-ab-view="desktop">🖥&nbsp;&nbsp;Desktop view</button>' +
+            '<button class="ab-menu-item" data-ab-view="mobile">📱&nbsp;&nbsp;Mobile view</button>' +
+            '<div class="ab-menu-sep"></div>' +
+            '<button class="ab-menu-item" data-ab-fs>⛶&nbsp;&nbsp;Fullscreen browser</button>' +
+          "</div>"
+        : "") +
       (kernelOn
         ? '<div class="ab-viewwrap" id="ab-viewwrap">' +
             (live ? "" : '<div class="ab-boot" id="ab-boot">spinning up a fresh cloud browser…</div>') +
@@ -159,6 +174,117 @@
   }
   NB.agentBrowseSetLive = setLive; /* reusable by the Live voice pane */
 
+  /* ---------- browser-view menu: zoom / mobile / fullscreen ----------
+     DISPLAY-level controls for the embedded live stream only — the agent's
+     log/answer are untouched, and the cloud browser itself keeps its own
+     real viewport. "Mobile view" additionally flips the cloud browser to a
+     REAL 390×844 phone viewport via CDP (see kernel.js setViewport) so the
+     site serves its mobile layout — not just a squeezed desktop stream. */
+  function wireViewMenu(wrap) {
+    var btn = wrap.querySelector("#ab-view-btn");
+    var menu = wrap.querySelector("#ab-menu");
+    if (!btn || !menu) return;
+    var zoom = 1;
+    var vw = wrap.querySelector("#ab-viewwrap");
+
+    function liveFrame() { return wrap.querySelector("#ab-live"); }
+    function setZoom(z) {
+      zoom = Math.min(2, Math.max(0.5, Math.round(z * 100) / 100));
+      var f = liveFrame();
+      if (f) {
+        if (zoom === 1) { f.style.transform = ""; f.style.width = ""; f.style.height = ""; }
+        else {
+          f.style.transformOrigin = "0 0";
+          f.style.transform = "scale(" + zoom + ")";
+          f.style.width = (100 / zoom) + "%";
+          f.style.height = (100 / zoom) + "%";
+        }
+      }
+      var cur = menu.querySelector("[data-ab-zoom='reset']");
+      if (cur) cur.textContent = zoom === 1 ? "◻  100%" : "◻  " + Math.round(zoom * 100) + "%";
+    }
+    function markView(mode) {
+      menu.querySelectorAll("[data-ab-view]").forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-ab-view") === mode);
+      });
+      if (vw) vw.classList.toggle("mobile", mode === "mobile");
+    }
+    function exitPseudoFs() {
+      if (vw) vw.classList.remove("fs-pseudo");
+      var x = wrap.querySelector("#ab-fs-exit");
+      if (x) x.remove();
+    }
+    function pseudoFs() {
+      if (!vw) return;
+      vw.classList.add("fs-pseudo");
+      if (!wrap.querySelector("#ab-fs-exit")) {
+        var x = document.createElement("button");
+        x.id = "ab-fs-exit";
+        x.className = "ab-fs-exit";
+        x.textContent = "✕ exit fullscreen";
+        x.addEventListener("click", function (e) { e.stopPropagation(); exitPseudoFs(); });
+        vw.appendChild(x);
+      }
+    }
+    function toggleFullscreen() {
+      if (!vw) return;
+      var doc = document;
+      if (doc.fullscreenElement === vw) {
+        if (doc.exitFullscreen) { try { doc.exitFullscreen(); } catch (e) {} }
+        exitPseudoFs();
+        return;
+      }
+      if (vw.requestFullscreen) {
+        try { vw.requestFullscreen().catch(function () { pseudoFs(); }); } catch (e) { pseudoFs(); }
+        return;
+      }
+      pseudoFs(); /* iOS Safari / old browsers: full-viewport overlay instead */
+    }
+
+    markView(NB.kernelAgent && NB.kernelAgent.getViewport ? NB.kernelAgent.getViewport() : "desktop");
+    btn.addEventListener("click", function (e) { e.stopPropagation(); menu.hidden = !menu.hidden; });
+    menu.addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest(".ab-menu-item") : null;
+      if (!b) return;
+      e.stopPropagation();
+      var z = b.getAttribute("data-ab-zoom");
+      if (z === "in") return setZoom(zoom * 1.25);
+      if (z === "out") return setZoom(zoom / 1.25);
+      if (z === "reset") return setZoom(1);
+      var v = b.getAttribute("data-ab-view");
+      if (v === "mobile" || v === "desktop") {
+        markView(v);
+        try { if (NB.kernelAgent.setViewport) NB.kernelAgent.setViewport(v); } catch (e2) {}
+        return;
+      }
+      if (b.hasAttribute("data-ab-fs")) { toggleFullscreen(); menu.hidden = true; }
+    });
+  }
+  /* one shared click-away dismiss for whatever menu is open (no per-open
+     listeners — the panel is opened/closed repeatedly) */
+  document.addEventListener("click", function () {
+    var m = document.querySelector("#ab-menu");
+    if (m && !m.hidden) m.hidden = true;
+  });
+
+  /* Kernel down? DON'T delete the viewport — collapse it into a slim strip
+     with a Retry button. Removing it wholesale (the old behavior) is what
+     made the kernel look like it "completely disappeared" on some devices. */
+  function markKernelUnavailable(reason) {
+    var vw = document.querySelector("#ab-viewwrap");
+    if (!vw || vw.querySelector("#ab-live")) return;
+    vw.classList.add("unavailable");
+    vw.innerHTML = '<div class="ab-kdown"><span class="ab-kdown-msg">☁ kernel unreachable — ' + esc(reason) +
+      ' · running in reader mode</span><button class="btn btn-outline btn-sm" id="ab-kretry">Retry kernel</button></div>';
+    var r = vw.querySelector("#ab-kretry");
+    if (r) r.addEventListener("click", function () {
+      var el = document.querySelector("#ab-panel");
+      if (el) el.remove();
+      running = false;
+      NB.agentBrowse(lastQuery || "");
+    });
+  }
+
   function openPanel() {
     var old = document.querySelector("#ab-panel");
     if (old) old.remove();
@@ -169,6 +295,7 @@
     wrap.innerHTML = panelHTML();
     (root || document.body).appendChild(wrap);
     wrap.querySelector("#ab-close").addEventListener("click", function () { wrap.remove(); });
+    wireViewMenu(wrap);
     return {
       el: wrap,
       viewport: wrap.querySelector("#ab-viewport"),
@@ -300,6 +427,7 @@
      info instead of a 150-char nav-menu sliver. */
   function runKernel(query, panel) {
     var steps = [], lastPage = null;
+    var readDone = {}, readFails = {}; /* per-run URL bookkeeping — loop breakers */
     var K = (window.NB && NB.__kernelInternals) || {};
     var extract = K.extractPageText || function (d2, m) { return d2.text("body").then(function (t) { return { title: "", url: "", text: String(t || "").slice(0, m || 3600) }; }); };
     var sweep = K.sweepPage || function () { return Promise.resolve(); };
@@ -339,7 +467,7 @@
           "1) DOING tasks (sign in, sign up, create account, submit a form, buy, post) MUST be completed with OPEN → CLICK/TYPE/KEY. Reading pages alone cannot complete them. If the request names a site, OPEN it directly — do NOT SEARCH for it.\n" +
           "2) If the request needs an email address: OPEN a temp-mail site first (https://temp-mail.io or https://tempmail.plus), READ the page to get the address, TYPE it into the form, submit, then OPEN the temp-mail site again and READ the inbox for the confirmation code/link.\n" +
           "3) If an element you need is missing or a page just changed, WAIT once and re-look. If it may be below the fold, SCROLL.\n" +
-          "4) READ the page when you need its content — element labels alone are not the content.\n" +
+          "4) READ the page when you need its content — element labels alone are not the content. A page whose text comes back empty is auto-retried through a text proxy; a URL that FAILED twice is dead — never READ it again.\n" +
           "5) Never OPEN the page you are already on (see CURRENT URL). Do not repeat a step that already failed the same way.\n" +
           "6) When the task is done or you have what you need, ANSWER immediately — for DOING tasks report exactly what you did (accounts created, forms submitted, addresses/codes used); for research report the facts.\n" +
           "Start with OPEN (if the request names a site) or SEARCH (only if you don't know where to go). No other text.",
@@ -442,13 +570,46 @@
               || links.find(function (l) { return (l.t || "").toLowerCase().indexOf(wanted) > -1; });
             if (hit) { url = hit.h; arg = hit.t; log("resolved “" + hit.t + "” → " + hit.h, "ok"); }
           }
+          /* LOOP BREAKERS — "the agent reads the same dead page forever":
+             a URL whose text was already captured is never re-read, and one
+             that failed twice is skipped WITH an explicit instruction so the
+             model moves on instead of grinding the same step (it kept
+             re-emitting READ because failures never reached STEPS SO FAR). */
+          if (readDone[url]) {
+            log("already read " + url + " — its text is in STEPS SO FAR", "warn");
+            steps.push("READ " + url + " → ALREADY READ — use that text from STEPS SO FAR or ANSWER");
+            return step(n + 1, d);
+          }
+          if ((readFails[url] || 0) >= 2) {
+            log("skipping " + url + " — it failed twice already", "err");
+            steps.push("READ " + url + " → FAILED TWICE (unreachable/JS-only). Choose a DIFFERENT page, SEARCH again, or ANSWER with what you have.");
+            return step(n + 1, d);
+          }
           log((action === "READ" ? "reading " : "opening ") + url, "act");
           foot("cloud browser → " + url.replace(/^https?:\/\//, "").slice(0, 40));
           return d.goto(url).then(function () { return sleep(500); })
             .then(function () { return sweep(d); })
             .then(function () { return extract(d, 3600); })
             .then(function (p) {
-              if (!p || !String(p.text || "").trim()) throw new Error("empty page");
+              if (p && String(p.text || "").trim()) return p;
+              /* cloud extraction came back empty (JS-only or blocked page) —
+                 re-read the SAME URL through the text-proxy renderer inside
+                 the cloud browser, so the agent still gets real content
+                 instead of looping on empty reads ("can't retrieve info") */
+              log("page text came back empty — reading it through the text proxy", "act");
+              return d.goto("https://r.jina.ai/" + url).then(function () { return sleep(700); })
+                .then(function () { return extract(d, 3600); })
+                .then(function (p2) {
+                  if (p2 && String(p2.text || "").trim()) {
+                    p2.url = url;
+                    if (!p2.title || /^just a moment/i.test(p2.title)) p2.title = url;
+                    return p2;
+                  }
+                  throw new Error("empty page");
+                });
+            })
+            .then(function (p) {
+              readDone[url] = true;
               lastPage = p;
               var flat = String(p.text || "").replace(/\s+/g, " ").trim();
               steps.push("READ " + (p.url || url) + " [" + (p.title || "untitled") + "] → " + flat.slice(0, 500));
@@ -456,7 +617,9 @@
               return sleep(700).then(function () { return step(n + 1, d); });
             })
             .catch(function (e) {
-              log("could not open that page (" + (e.message || "error") + ")", "err");
+              readFails[url] = (readFails[url] || 0) + 1;
+              log("could not read that page (" + (e.message || "error") + ")", "err");
+              steps.push("READ " + url + " → FAILED (" + String(e.message || "error").slice(0, 60) + "). Try a DIFFERENT page, SEARCH, or ANSWER.");
               return step(n + 1, d);
             });
         }
@@ -567,19 +730,26 @@
 
   /* Watchable run: opens the panel, streams steps.
      Kernel mode first (real cloud browser); classic readers as fallback. */
+  var runSeq = 0, lastQuery = "";
   NB.agentBrowse = function (query) {
     var q = String(query || "").trim();
     if (!q) { NB.toast("Give the agent something to research.", "warn"); return; }
     if (running) { NB.toast("agentBrowse is already running.", "warn"); return; }
     running = true;
+    var myRun = ++runSeq;
+    lastQuery = q;
+    var kernelWanted = NB.kernelMode && NB.kernelMode() !== "off" && NB.kernelAgent.available();
+    /* a fresh run must NEVER embed the PREVIOUS run's live view — that
+       browser was deleted when the last run ended, so the frame would sit
+       blank forever (the other half of the "kernel disappeared" reports) */
+    if (kernelWanted && NB.kernelResetLive) NB.kernelResetLive();
     var panel = openPanel();
     log("agent online — watching it work in real time", "");
     status("starting");
-    var kernelWanted = NB.kernelMode && NB.kernelMode() !== "off" && NB.kernelAgent.available();
     var startRun = function (useKernel) {
       var job = useKernel ? runKernel(q, panel) : runClassic(q, panel);
       Promise.resolve(job).then(function (out) {
-      running = false;
+      if (myRun === runSeq) running = false;
       var el = document.querySelector("#ab-panel");
       if (el && out && out.answer) {
         var v = el.querySelector("#ab-viewport") || el.querySelector(".ab-viewwrap");
@@ -591,12 +761,13 @@
         }
         status("done");
       }
-      }).catch(function () { running = false; });
+      }).catch(function () { if (myRun === runSeq) running = false; });
     };
     if (!kernelWanted) { startRun(false); return; }
     /* Kernel FIRST — always. The in-site readers only run when the
        cloud browser can't be reached at all. */
     NB.kernelAgent.ready().then(function (ok) {
+      if (!document.querySelector("#ab-panel")) { if (myRun === runSeq) running = false; return; }
       if (ok) startRun(true);
       else {
         var blocked = NB.kernelProbeBlocked && NB.kernelProbeBlocked();
@@ -606,9 +777,13 @@
             : "kernel unreachable — falling back to in-site readers",
           "err"
         );
-        /* no live iframe ever arrived — drop the empty kernel viewport */
-        var vw = document.querySelector("#ab-viewwrap");
-        if (vw && !vw.querySelector("#ab-live")) vw.remove();
+        /* keep the viewport — collapse it to a retry strip instead of
+           deleting it (deleting made the kernel look vanished) */
+        markKernelUnavailable(
+          blocked
+            ? "relay blocked by this browser — check the relay URL in Settings → Kernel Browser"
+            : "relay unreachable right now"
+        );
         startRun(false);
       }
     });

@@ -356,7 +356,7 @@
       "function clean(s){return String(s||'').replace(/[\\t\\r]+/g,' ').replace(/\\n{3,}/g,'\\n\\n').replace(/[ \\u00a0]{2,}/g,' ').trim();}" +
       "var CAND=['main','article','[role=\"main\"]','#content','.post-content','.entry-content','.markdown-body','.prose','.article-body','#__next','body'];" +
       "var host=null;" +
-      "for(var i=0;i<CAND.length;i++){var e=document.querySelector(CAND[i]);if(e&&clean(e.innerText).length>240){host=e;break;}}" +
+      "for(var i=0;i<CAND.length;i++){var e=document.querySelector(CAND[i]);if(e&&clean(e.innerText).length>120){host=e;break;}}" +
       "if(!host)host=document.body;" +
       "var kill='nav,header,footer,aside,script,style,noscript,svg,form,iframe,.sidebar,#sidebar,.cookie,.banner,[aria-hidden=\"true\"]';" +
       "var clone=host.cloneNode(true);" +
@@ -364,6 +364,7 @@
       "var h1=(document.querySelector('h1')||{}).innerText||'';" +
       "var text=clean(clone.innerText);" +
       "if(h1&&text.indexOf(clean(h1))!==0)text=clean(h1)+'\\n'+text;" +
+      "if(text.length<40){try{text=clean(document.body?document.body.innerText:'');}catch(e4){}}" +
       "return {title:document.title||'',url:location.href,text:text.slice(0," + maxChars + ")};" +
       "})()";
     function once() {
@@ -399,6 +400,22 @@
     ).catch(function () {}).then(function () { return sleep(1300); });
   }
 
+  /* Viewport emulation: applies to the NEXT tab at driver start, and to the
+     active tab immediately while a run is in flight. "mobile" is a REAL
+     390×844 phone viewport inside the cloud browser (CDP Emulation) — the
+     site itself serves its mobile layout. Display-level zoom/fullscreen for
+     the live stream live in agent-browse.js. */
+  var activeDriver = null, pendingViewport = ""; /* "" | "mobile" | "desktop" */
+  function applyViewport(cdp2, sessionId) {
+    if (pendingViewport === "mobile") {
+      return cdp2.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }, sessionId).catch(function () {});
+    }
+    if (pendingViewport === "desktop") {
+      return cdp2.send("Emulation.clearDeviceMetricsOverride", {}, sessionId).catch(function () {});
+    }
+    return Promise.resolve();
+  }
+
   /* ---------- driver: one fresh TAB on a cloud browser ---------- */
   var TAB_REUSE = false; /* tests flip this to skip real sockets + transport */
 
@@ -421,9 +438,15 @@
           return cdp.send("Page.enable", {}, attached).then(function () {
             return cdp.send("Runtime.enable", {}, attached);
           });
-        }).then(function () { return driver; });
+        }).then(function () {
+          return applyViewport(cdp, attached);
+        }).then(function () {
+          activeDriver = driver;
+          return driver;
+        });
       },
       send: function (m, p) { return cdp.send(m, p, attached); },
+      __applyViewport: function () { return applyViewport(cdp, attached); },
       goto: function (url) {
         return cdp.send("Page.navigate", { url: url }, attached).then(function (r) {
           if (r && r.errorText) throw new Error(r.errorText);
@@ -476,7 +499,7 @@
       /* run over → kill the tab */
       close: function () {
         var p = (tabId ? cdp.send("Target.closeTarget", { targetId: tabId }).catch(function () {}) : Promise.resolve());
-        return p.then(function () { cdp.close(); });
+        return p.then(function () { cdp.close(); }).then(function () { if (activeDriver === driver) activeDriver = null; });
       },
     };
     return driver.start();
@@ -664,9 +687,25 @@
     return currentLive;
   };
 
+  /* A fresh run means the PREVIOUS cloud browser was deleted — clear the
+     stale live URL so the new panel never embeds a dead frame (that blank
+     frame is what made the kernel look like it "disappeared"). */
+  NB.kernelResetLive = function () { currentLive = ""; };
+
   NB.kernelAgent = {
     /* can the agent drive a cloud browser right now? */
     available: function () { return "WebSocket" in window && typeof fetch !== "undefined"; },
+
+    /* Browser-view viewport for the CURRENT/next cloud tab (CDP emulation).
+       "mobile" = real 390×844 phone viewport in the cloud browser itself;
+       "desktop" = clear the override. Display-level zoom/fullscreen live in
+       agent-browse.js — this is the part that changes what the site serves. */
+    setViewport: function (mode) {
+      pendingViewport = mode === "mobile" ? "mobile" : "desktop";
+      if (activeDriver && activeDriver.__applyViewport) return activeDriver.__applyViewport();
+      return Promise.resolve();
+    },
+    getViewport: function () { return pendingViewport === "mobile" ? "mobile" : "desktop"; },
 
     /* Verify the Kernel MCP endpoint actually answers for our key.
        Cached for 5 minutes so UI paths can call it freely. */
