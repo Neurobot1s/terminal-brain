@@ -3,8 +3,18 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
-## Current state (2026-09-20, Round 6) — ALL GREEN, AGENT NOW DOES REAL WORK
-All 8 test suites pass (`boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`). All 14 JS files `node --check` clean. Cache-busters bumped to `?v=20260920a` (ai.js, views-dashboard.js, agent-browse.js).
+## Current state (2026-09-20, Round 6.1) — ALL GREEN, PAGE READING FIXED
+All 8 test suites pass. All JS `node --check` clean. Cache-busters `?v=20260920a` (ai.js, views-dashboard.js, agent-browse.js, **kernel.js**).
+
+### Round 6.1 — THE "agent can't read pages / says empty but I can see it" bug (ROOT CAUSE)
+- **`extractPageText` double-unwrapped the CDP response.** `driver.eval` already resolves with `d.result` and returns `r.result.value` (the page object) — but `extractPageText` then read `r.result.value` AGAIN off that object → `undefined` → **always fell through to `{title:"",url:"",text:""}`**. Every page, every search, every run: the agent was told the page was empty while the live view showed it fine. Never caught because jsdom stubs the driver and the Round-5 live check read `document.title` via raw CDP, not through `extractPageText`.
+- **Fixes in js/kernel.js:**
+  - Single unwrap with a shape guard (`v && typeof v.text === "string"`), tolerant of both response shapes.
+  - **Bounded empty-retry (×3, 700ms apart):** SPAs flip `readyState` to `complete` BEFORE content renders — the agent no longer gives up on a page that's still painting.
+- **Live-verified through the relay (dev-only E2E, then deleted):** create session → CDP WS → navigate example.com → run the EXACT runtime expression with driver.eval semantics → title "Example Domain", NON-EMPTY text ✓ → delete → relay list `[]` (zero leaks). Repro note: the app's Cdp resolves `d.result`; a raw-WS harness must mirror that or fields look undefined.
+- Search results, OPEN/READ, temp-mail address reads, and DDG result text all flow through this one extractor — they were ALL dead before this fix.
+
+## Current state (2026-09-20, Round 6) — AGENT DOES REAL WORK (see also 6.1)
 
 ## Round 6 — "make the agent do actual work" + "it just searches mount everest height"
 

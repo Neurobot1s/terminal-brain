@@ -351,7 +351,7 @@
      content, and returns much more text. */
   function extractPageText(driver, maxChars) {
     maxChars = maxChars || 3600;
-    return driver.eval(
+    var expr =
       "(function(){" +
       "function clean(s){return String(s||'').replace(/[\\t\\r]+/g,' ').replace(/\\n{3,}/g,'\\n\\n').replace(/[ \\u00a0]{2,}/g,' ').trim();}" +
       "var CAND=['main','article','[role=\"main\"]','#content','.post-content','.entry-content','.markdown-body','.prose','.article-body','#__next','body'];" +
@@ -365,11 +365,26 @@
       "var text=clean(clone.innerText);" +
       "if(h1&&text.indexOf(clean(h1))!==0)text=clean(h1)+'\\n'+text;" +
       "return {title:document.title||'',url:location.href,text:text.slice(0," + maxChars + ")};" +
-      "})()"
-    ).then(function (r) {
-      if (r && r.exceptionDetails) throw new Error("page read error");
-      return (r && r.result && r.result.value) || { title: "", url: "", text: "" };
-    });
+      "})()";
+    function once() {
+      /* driver.eval ALREADY unwraps CDP result.value — v IS the page object
+         itself. (The old code unwraped a second time and ALWAYS fell through
+         to the empty fallback — the agent could never read a page.) */
+      return driver.eval(expr).then(function (v) {
+        return (v && typeof v === "object" && typeof v.text === "string")
+          ? v
+          : { title: "", url: "", text: "" };
+      }).catch(function () { return { title: "", url: "", text: "" }; });
+    }
+    /* SPAs flip readyState to complete BEFORE their content renders —
+       retry on empty text so the agent doesn't give up too early */
+    function tries(n) {
+      return once().then(function (p) {
+        if ((p.text && p.text.trim()) || n <= 0) return p;
+        return sleep(700).then(function () { return tries(n - 1); });
+      });
+    }
+    return tries(3);
   }
 
   /* scroll the page top→bottom→top so lazy-loaded content renders
