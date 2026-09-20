@@ -683,11 +683,30 @@
       NB.agentBrowse(q);
     });
   }
+  /* THE "🌐 button disappears" BUG (user-reported, intermittent): every
+     render wipes #view, and the old re-wire path (DOMContentLoaded + a 60ms
+     timer after hashchange) missed two real cases —
+       1) a fresh load whose URL ALREADY contains a hash (reopening the site
+          on #/ or #/notes) never fires `hashchange` at all, so the button
+          only appeared after the first manual navigation;
+       2) agent-browse.js registers its DOMContentLoaded listener BEFORE
+          main.js boots (script order), so on first paint wireChatButton()
+          ran while the view was still empty — a silent no-op.
+     A MutationObserver re-wires the instant an ask-box exists without its
+     trigger — no timing, no races, no missed events. */
+  if ("MutationObserver" in window && document.body) {
+    var wireQueued = false;
+    new MutationObserver(function () {
+      if (wireQueued) return;
+      wireQueued = true;
+      setTimeout(function () { wireQueued = false; wireChatButton(); }, 0);
+    }).observe(document.body, { childList: true, subtree: true });
+  }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", wireChatButton);
   } else {
     wireChatButton();
   }
-  /* the dashboard re-renders on hashchange — re-wire after each render */
-  window.addEventListener("hashchange", function () { setTimeout(wireChatButton, 60); });
+  /* re-renders ride on hashchange — belt-and-braces alongside the observer */
+  window.addEventListener("hashchange", function () { setTimeout(wireChatButton, 0); });
 })();
