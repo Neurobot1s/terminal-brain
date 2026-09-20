@@ -57,7 +57,10 @@ function check(label, fn) { try { const v = typeof fn === "function" ? fn() : fn
 
 (async () => {
   NB.agentBrowse("kernel view menu test");
-  await sleep(150);
+  /* wait for the driver to boot (fake WS answers async) instead of a fixed
+     sleep — CI machines are slower and a fixed 150ms raced the boot */
+  for (let i = 0; i < 60 && !(document.querySelector("#ab-live") && document.querySelector("#ab-live").getAttribute("src")); i++) await sleep(25);
+  await sleep(30);
   const panel = document.querySelector("#ab-panel");
   /* DEBUG */
   console.log("[dbg] wsMsgs:", wsLog.reduce((a, w) => a + w.frames.length, 0), "status:", (document.querySelector("#ab-status") || {}).textContent, "vw:", (document.querySelector("#ab-viewwrap") || {}).innerHTML ? "yes" : "no");

@@ -3,6 +3,14 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
+## Current state (2026-09-20, Round 7) — ALL 10 SUITES PASS, VIEW-MENU TEST RACE FIXED
+All 10 test suites pass (boot, routes, interact, live, ai, agent, agent-browse, kernel, kernel-view, ab-trigger-boot). All JS `node --check` clean.
+
+### Round 7 — fixes from the "continue" session
+- **`tests/kernel-view.test.js` raced its own fake WebSocket.** It slept a fixed 150ms after `NB.agentBrowse()` and then asserted `#ab-live` existed — but the fake WS + driver boot resolves on timers that can slip past 150ms on slower machines (flaky 4-fail runs interleaved with passes; the standalone debug harness showed `live: true` at 400ms in 3/3 runs). Fixed: the test now POLLS up to 1.5s for `#ab-live` + a `src` before asserting, plus a 30ms settle. No app-code change was needed — the app itself was already correct.
+- **Deleted the leftover `tests/debug-ablive.test.js`** (temporary debug harness, not a real suite).
+- Verified present and wired (user-reported Round 5/6 issues all closed): `.ab-menu` styles (styles.perf.css §~795 incl. mobile media query), kernel-down retry strip (`ab-kdown` + `Retry kernel`), pseudo-fullscreen (`fs-pseudo` + exit chip), CDP viewport emulation (`Emulation.setDeviceMetricsOverride`, 390×844), never-empty extraction fallback (`text.length<40` + body.innerText retry) in `extractPageText` (js/kernel.js:352).
+
 ## Current state (2026-09-20, Round 6.1) — ALL GREEN, PAGE READING FIXED
 All 8 test suites pass. All JS `node --check` clean. Cache-busters `?v=20260920a` (ai.js, views-dashboard.js, agent-browse.js, **kernel.js**).
 
