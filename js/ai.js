@@ -591,6 +591,13 @@
     function runAsk() {
       var q = modal.body.querySelector("#ask-q").value.trim();
       if (!q) return;
+      /* doing-tasks belong to the browser agent, not the memory-chat */
+      if (NB.isTaskRequest && NB.isTaskRequest(q)) {
+        modal.close();
+        NB.toast("Task handed to agentBrowse — watch it work.", "ok");
+        NB.agentBrowse(q);
+        return;
+      }
       var go = modal.body.querySelector("#ask-go");
       go.disabled = true;
       go.textContent = "✦ Thinking…";

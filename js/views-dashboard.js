@@ -152,6 +152,16 @@
       var input = $("#ask-input", root);
       var q = input.value.trim();
       if (!q) return;
+      /* doing-tasks (sign in, sign up, forms, orders…) belong to the
+         browser agent — the memory-chat AI cannot operate websites */
+      if (NB.isTaskRequest && NB.isTaskRequest(q)) {
+        input.value = "";
+        bubble("user", q);
+        bubble("ai think", "🤖 that's a doing-task — handing it to the browser agent…");
+        toast("Task handed to agentBrowse — watch it work.", "ok");
+        NB.agentBrowse(q);
+        return;
+      }
       NB.suppressRerender = true; /* agent writes must not wipe this chat */
       input.value = "";
       bubble("user", q);

@@ -3,6 +3,31 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
+## Current state (2026-09-20, Round 6) — ALL GREEN, AGENT NOW DOES REAL WORK
+All 8 test suites pass (`boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`). All 14 JS files `node --check` clean. Cache-busters bumped to `?v=20260920a` (ai.js, views-dashboard.js, agent-browse.js).
+
+## Round 6 — "make the agent do actual work" + "it just searches mount everest height"
+
+### 1. The Mount-Everest echo bug (ROOT CAUSE FOUND — it was us, not the model)
+- **The agent prompts' few-shot examples literally said `NEXT SEARCH mount everest height` / `NEXT ANSWER Mount Everest is … 8,849 m`.** The small NVIDIA model (gpt-oss-20b) sometimes parrots example content instead of the user's question → it "searched Mount Everest height" for unrelated asks.
+- **Fixed in BOTH prompt AND code:**
+  - All three prompts (kernel loop, classic readers, quiet) now lead with RULE 0: examples are FORMAT ONLY — always act on the user's request. Kernel examples are now topic-neutral doing-steps (OPEN → CLICK → TYPE → KEY → ANSWER).
+  - **`fixEcho()` guard in every loop:** if a model step is about the demo topic (`mount everest|8,849`) or a literal `<template>` while the user's query never mentions it → SEARCH is rewritten to the user's query; ANSWER/OPEN/READ are rejected and the run falls back to `bestEffortAnswer` (composes from gathered research). If the user genuinely asks about Everest, the guard stays out of the way.
+
+### 2. Task auto-routing — doing-tasks now reach the browser agent automatically
+- **New `NB.isTaskRequest(q)` heuristic** (agent-browse.js): sign in/up, login/logged-in/logging-in, register, create/make account, fill/submit form, checkout/cart, buy/order/book/reserve + article, subscribe, apply, post/tweet/publish/upload, send message/email, temp mail, "open X and/then …" chains.
+- **Dashboard ask box (`views-dashboard.js` send()) and the ✦ Ask modal (`ai.js` runAsk) now route task-like messages to `NB.agentBrowse(q)`** instead of the memory-chat AI (which cannot operate websites). Toast: "Task handed to agentBrowse — watch it work." Research questions still go to askAI unchanged.
+- Sanity-checked 10 phrasings ("sign in to chatgpt.com via temp mail" → agent; "How tall is Mount Everest?" → chat; "best laptop to buy 2026" → chat; "log into my netflix account" → agent; "open youtube and play lofi beats" → agent; …) — ALL PASS.
+
+### 3. Kernel agent is now a DOING agent
+- Prompt rebuilt: interaction example chain first, per-run **TASK TYPE: DOING vs RESEARCH** (from `isTaskRequest`), DOING tasks must OPEN the named site directly (no SEARCH detour) and use CLICK/TYPE/KEY; temp-mail recipe expanded (open → READ address → TYPE → submit → reopen inbox → READ code); ANSWER must report what was DONE (accounts created, forms submitted, codes used).
+- **New `NEXT SCROLL down|up` action** (d.eval scrollBy) for below-the-fold fields/buttons.
+- MAX_STEPS 18 → 24 (temp-mail sign-up flows need ~15+ steps); per-step page-text window 500 → 900 chars (temp addresses/codes survive truncation); step tokens 220 → 260.
+- 🌐 button tooltip: "watch the agent DO tasks & research on the web".
+
+### Verified this round
+- `node --check` all 14 JS files clean; 8/8 jsdom suites pass; `NB.isTaskRequest` 10/10; agent-browse scripted run ALL PASS with the echo guard active in kernel+classic+quiet paths.
+
 ## Current state (2026-09-19, Round 5) — ALL GREEN, SCROLL/TOUCH/KERNEL-AGENT HARDENED
 All 8 test suites pass (`boot`, `routes`, `interact`, `live`, `ai`, `agent`, `agent-browse`, `kernel`). All 14 JS files `node --check` clean; all 3 CSS files brace-balanced. Cache-busters bumped to `?v=20260919e`.
 

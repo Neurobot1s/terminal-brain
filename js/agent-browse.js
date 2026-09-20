@@ -19,6 +19,38 @@
   function esc(s) { return NB.esc(s); }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
+  /* ---------- task vs. question ----------
+     "sign in to chatgpt.com via temp mail" is a DOING task and must go to
+     the browser agent — the memory-chat AI cannot operate websites. */
+  var TASK_RX = new RegExp(
+    "\\b(sign\\s?-?\\s?in|sign\\s?-?\\s?up|log\\s?in|log\\s?into|login|logged\\s?in|logging\\s?(in|into)|register|create\\s+(an?\\s+)?account|make\\s+(an?\\s+)?account|" +
+    "fill\\s+(in|out)|submit\\s+(the\\s+)?form|checkout|check\\s?out|add\\s+to\\s+(my\\s+)?cart|buy\\s+(a|an|the|me)|" +
+    "order\\s+(a|an|the|my|food)|book\\s+(a|an|the|my)|reserve\\s+(a|an|the|my)|subscribe\\s+to|apply\\s+(to|for)|" +
+    "post\\s+(a|an|this|it|my)|tweet\\b|publish\\b|upload\\b|send\\s+(a\\s+)?(message|email|mail)|temp\\s?-?\\s?mail|via\\s+temp|" +
+    "delete\\s+my\\s+(account|post|tweet)|change\\s+my\\s+(password|email|username))\\b", "i");
+  function isTaskRequest(q) {
+    q = String(q || "");
+    if (q.length < 8) return false;
+    if (TASK_RX.test(q)) return true;
+    /* "open X and then …" / "go to X and …" multi-step chains are tasks */
+    return /\b(open|go\s+to|visit)\b.+\b(and|then)\b.+/i.test(q);
+  }
+  NB.isTaskRequest = isTaskRequest;
+
+  /* ---------- demo-echo guard ----------
+     The prompts' FORMAT examples use a fixed demo topic; small models
+     sometimes echo the example back instead of the user's request (the
+     reported "it just searches mount everest height" bug). When a step
+     is about the demo topic — or a literal <template> — but the user
+     never mentioned it, rewrite or reject the step. */
+  var ECHO_RX = /mount\s*everest|8,?\s*849/i;
+  function fixEcho(action, arg, query) {
+    if (!ECHO_RX.test(arg) && !/^<[^>]*>$/.test(arg)) return { action: action, arg: arg };
+    if (ECHO_RX.test(String(query || ""))) return { action: action, arg: arg }; /* user really asked about it */
+    if (action === "SEARCH") return { action: action, arg: String(query) }; /* search THEIR thing */
+    return null; /* ANSWER/OPEN/READ aimed at the demo → not trustworthy */
+  }
+
   /* ---------- real network readers ---------- */
 
   /* Wikipedia search (CORS-open, no key) */
@@ -191,7 +223,7 @@
   function foot(t) { var f = document.querySelector("#ab-foot"); if (f) f.textContent = t; }
 
   /* ---------- the agent loop ---------- */
-  var MAX_STEPS = 18; /* real tasks (sign-up flows) need room */
+  var MAX_STEPS = 24; /* doing-tasks (temp-mail sign-up flows) need real room */
 
   /* ---------- real-interaction helpers (drive the cloud browser) ----------
      The model works with VISIBLE TEXT ("Sign in", "email"), not raw CSS —
@@ -276,50 +308,57 @@
       if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
       status("step " + n + "/" + MAX_STEPS);
       foot("thinking with your local NVIDIA model…");
-      return Promise.all([pageContext(d), currentUrl(d), extract(d, 1200).catch(function () { return null; }), collectLinks(d, 6)]).then(function (ctx) {
+      return Promise.all([pageContext(d), currentUrl(d), extract(d, 1600).catch(function () { return null; }), collectLinks(d, 6)]).then(function (ctx) {
         var elems = ctx[0], here = ctx[1] || "", snap = ctx[2] || null, links = ctx[3] || [];
         var elemLines = (elems || []).slice(0, 30).map(function (e) {
           return e.k === "field" ? "  field " + e.t + "[" + e.type + "] “" + e.ph + "”" + (e.v ? " = " + e.v : "")
             : "  " + e.k + " “" + e.tx + "”";
         }).join("\n");
         var linkLines = links.map(function (l) { return "  " + l.t + " → " + l.h; }).join("\n");
+        var doing = isTaskRequest(query);
         return think(
-          "You are agentBrowse, an autonomous web agent inside NeuroBot that DRIVES a real cloud browser to COMPLETE the user's task. " +
+          "You are agentBrowse, an autonomous web agent inside NeuroBot that DRIVES a real cloud browser to COMPLETE the user's request. " +
           "ALWAYS reply in English. " +
-          "You can research AND interact: log in, fill forms, click buttons, submit.\n" +
+          "You can research AND DO things on websites: log in, sign up, fill forms, click buttons, submit.\n" +
           "Reply with EXACTLY one line, one of:\n" +
-          "NEXT SEARCH mount everest height\n" +
-          "NEXT OPEN https://en.wikipedia.org/wiki/Mount_Everest\n" +
-          "NEXT READ https://en.wikipedia.org/wiki/Mount_Everest\n" +
+          "NEXT OPEN https://example.com\n" +
           "NEXT CLICK Sign in\n" +
-          "NEXT TYPE email :: you@temp-mail.io\n" +
+          "NEXT TYPE email :: you@example.com\n" +
           "NEXT KEY Enter\n" +
           "NEXT WAIT 2\n" +
-          "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
+          "NEXT SCROLL down\n" +
+          "NEXT READ https://example.com/page\n" +
+          "NEXT SEARCH whatever you need to find\n" +
+          "NEXT ANSWER what you did or found\n" +
           "SEARCH = web search, OPEN = navigate, READ = extract page text, CLICK = click a button/link by its visible text, " +
           "TYPE = fill a form field (field-name :: text — field-name can be email/password/username/search or the placeholder), " +
-          "KEY = press Enter to submit, WAIT = pause 1-5s for navigation/modals to settle, ANSWER = stop and answer.\n" +
+          "KEY = press Enter to submit, SCROLL = scroll down/up to reveal more of the page, " +
+          "WAIT = pause 1-5s for navigation/modals to settle, ANSWER = stop and report.\n" +
           "WORKFLOW RULES:\n" +
-          "1) For tasks that require DOING something (create an account, sign in, submit a form), you MUST use CLICK/TYPE/KEY — OPEN/READ alone cannot complete them.\n" +
-          "2) If an element you need is missing or a page just changed, use WAIT once and re-look.\n" +
-          "3) READ the page when you need its content — element labels alone are not the content.\n" +
-          "4) Never OPEN the page you are already on (see CURRENT URL).\n" +
-          "5) Do not repeat a step that already failed the same way.\n" +
-          "6) When everything needed is done or learned, ANSWER immediately — report what you did/found.\n" +
-          "Temporary-email flows: OPEN a temp-mail site, READ the address, TYPE it into the sign-up form, KEY Enter, WAIT, then OPEN/READ the inbox again for the confirmation code. " +
-          "Start with SEARCH or OPEN. No other text.",
-          "QUESTION: " + query +
+          "0) The lines above are FORMAT EXAMPLES ONLY — never act on their example content. ALWAYS act on the USER'S REQUEST below.\n" +
+          "1) DOING tasks (sign in, sign up, create account, submit a form, buy, post) MUST be completed with OPEN → CLICK/TYPE/KEY. Reading pages alone cannot complete them. If the request names a site, OPEN it directly — do NOT SEARCH for it.\n" +
+          "2) If the request needs an email address: OPEN a temp-mail site first (https://temp-mail.io or https://tempmail.plus), READ the page to get the address, TYPE it into the form, submit, then OPEN the temp-mail site again and READ the inbox for the confirmation code/link.\n" +
+          "3) If an element you need is missing or a page just changed, WAIT once and re-look. If it may be below the fold, SCROLL.\n" +
+          "4) READ the page when you need its content — element labels alone are not the content.\n" +
+          "5) Never OPEN the page you are already on (see CURRENT URL). Do not repeat a step that already failed the same way.\n" +
+          "6) When the task is done or you have what you need, ANSWER immediately — for DOING tasks report exactly what you did (accounts created, forms submitted, addresses/codes used); for research report the facts.\n" +
+          "Start with OPEN (if the request names a site) or SEARCH (only if you don't know where to go). No other text.",
+          "USER'S REQUEST (the ONLY thing you should act on): " + query +
+          "\nTASK TYPE: " + (doing ? "DOING — the user wants something DONE on a website. You MUST interact (OPEN/CLICK/TYPE/KEY), not just read." : "RESEARCH — find and report information.") +
           "\n\nCURRENT URL: " + (here || "(unknown)") +
-          "\n\nPAGE TEXT (first 500 chars):\n" + (snap && String(snap.text || "").replace(/\s+/g, " ").trim().slice(0, 500) || "(unavailable)") +
+          "\n\nPAGE TEXT (first 900 chars):\n" + (snap && String(snap.text || "").replace(/\s+/g, " ").trim().slice(0, 900) || "(unavailable)") +
           "\n\nLINKS ON THIS PAGE (title → url):\n" + (linkLines || "(none)") +
           "\n\nCURRENT PAGE ELEMENTS:\n" + (elemLines || "(none detected)") +
           "\n\nSTEPS SO FAR:\n" + (steps.length ? steps.join("\n") : "(none yet)"),
-          220
+          260
         );
       }).then(function (raw) {
-        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|CLICK|TYPE|KEY|WAIT|ANSWER)\s*:?\s*([\s\S]+)$/i);
+        var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|CLICK|TYPE|KEY|WAIT|SCROLL|ANSWER)\s*:?\s*([\s\S]+)$/i);
         if (!m) { log("model step unclear — answering from what was gathered", "warn"); return bestEffortAnswer(query, steps, lastPage); }
         var action = m[1].toUpperCase(), arg = m[2].trim();
+        var fixed = fixEcho(action, arg, query);
+        if (!fixed) { log("model echoed the demo example — answering from the gathered research instead", "warn"); return bestEffortAnswer(query, steps, lastPage); }
+        action = fixed.action; arg = fixed.arg;
         if (action === "ANSWER") {
           log("ANSWER: " + arg, "ok");
           status("done");
@@ -355,6 +394,14 @@
           log("waiting " + secs + "s for the page to settle", "act");
           foot("cloud browser → wait");
           return sleep(secs * 1000).then(function () { return step(n + 1, d); });
+        }
+        if (action === "SCROLL") {
+          var dir = /up/i.test(arg) ? -1 : 1;
+          log("scrolling " + (dir > 0 ? "down" : "up"), "act");
+          foot("cloud browser → scroll");
+          return d.eval("window.scrollBy(0," + (700 * dir) + ")").catch(function () {}).then(function () {
+            return sleep(500).then(function () { return step(n + 1, d); });
+          });
         }
         if (action === "KEY") {
           var key = (arg || "Enter").trim() || "Enter";
@@ -444,10 +491,11 @@
         "ALWAYS reply in English. " +
         "You explore the web one step at a time to answer the user's question.\n" +
         "Reply with EXACTLY one line, in one of these formats (choose the single most useful next step):\n" +
-        "NEXT SEARCH mount everest height\n" +
-        "NEXT OPEN Mount Everest\n" +
+        "NEXT SEARCH <the user's topic, NOT the example topic>\n" +
+        "NEXT OPEN <a page title or url about the user's topic>\n" +
         "NEXT READ https://example.com/page\n" +
-        "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
+        "NEXT ANSWER <the answer to the user's question>\n" +
+        "RULE 0: the formats above are TEMPLATES — fill them with the USER'S topic from QUESTION below, never with example content. " +
         "Start with SEARCH if no pages have been opened yet. Use ANSWER as soon as the steps so far let you answer. No other text.",
         "QUESTION: " + query +
         "\n\nSTEPS SO FAR:\n" + (visited.length ? visited.map(function (v, i) { return (i + 1) + ". " + v; }).join("\n") : "(none yet)") +
@@ -459,6 +507,9 @@
         /* models drop the NEXT prefix ~half the time — accept both */
         var m = raw.match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|ANSWER)\s*:?\s*([\s\S]+)$/i);
         var action = m[1].toUpperCase(), arg = m[2].trim();
+        var fixedC = fixEcho(action, arg, query);
+        if (!fixedC) { log("model echoed the demo example — stopping", "warn"); status("done"); foot(""); return; }
+        action = fixedC.action; arg = fixedC.arg;
         if (action === "ANSWER") {
           log("ANSWER: " + arg, "ok");
           status("done");
@@ -576,10 +627,11 @@
       return think(
         "You are agentBrowse, an autonomous web-research agent. ALWAYS reply in English. " +
         "Reply with EXACTLY one line, in one of these formats:\n" +
-        "NEXT SEARCH mount everest height\n" +
-        "NEXT OPEN Mount Everest\n" +
+        "NEXT SEARCH <the user's topic, NOT the example topic>\n" +
+        "NEXT OPEN <a page title or url about the user's topic>\n" +
         "NEXT READ https://example.com/page\n" +
-        "NEXT ANSWER Mount Everest is Earth's highest mountain at 8,849 m.\n" +
+        "NEXT ANSWER <the answer to the user's question>\n" +
+        "RULE 0: fill the templates with the USER'S topic from QUESTION below, never with example content. " +
         "Start with SEARCH if no steps yet. Use ANSWER as soon as you can. No other text.",
         "QUESTION: " + q + "\n\nSTEPS SO FAR:\n" + (steps.join("\n") || "(none)") +
         (linksQ.length ? "\n\nLINKS: " + linksQ.slice(0, 15).join(" | ") : ""),
@@ -587,6 +639,9 @@
       ).then(function (raw) {
         var m = String(raw || "").match(/^(?:NEXT\s+)?(SEARCH|OPEN|READ|ANSWER)\s*:?\s*([\s\S]+)$/i);
         var a = m[1].toUpperCase(), arg = m[2].trim();
+        var fixedQ = fixEcho(a, arg, q);
+        if (!fixedQ) return Promise.resolve(captured || "I couldn't complete that research.");
+        a = fixedQ.action; arg = fixedQ.arg;
         if (a === "ANSWER") { captured = arg; return captured; }
         if (a === "SEARCH") {
           return wikiSearch(arg).then(function (hits) {
@@ -615,7 +670,7 @@
     var btn = document.createElement("button");
     btn.id = "ab-trigger";
     btn.className = "ask-mic ab-trigger";
-    btn.title = "agentBrowse — watch the agent research the web";
+    btn.title = "agentBrowse — watch the agent DO tasks & research on the web";
     btn.setAttribute("aria-label", "agentBrowse");
     btn.textContent = "🌐";
     var send = box.querySelector("#ask-send");
@@ -624,7 +679,7 @@
     btn.addEventListener("click", function () {
       var input = document.querySelector("#ask-input");
       var q = input && input.value.trim();
-      if (!q) { NB.toast("Type a research question first.", "warn"); if (input) input.focus(); return; }
+      if (!q) { NB.toast("Type a task or question first.", "warn"); if (input) input.focus(); return; }
       NB.agentBrowse(q);
     });
   }
