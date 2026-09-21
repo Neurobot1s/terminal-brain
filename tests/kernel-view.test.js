@@ -62,10 +62,6 @@ function check(label, fn) { try { const v = typeof fn === "function" ? fn() : fn
   for (let i = 0; i < 60 && !(document.querySelector("#ab-live") && document.querySelector("#ab-live").getAttribute("src")); i++) await sleep(25);
   await sleep(30);
   const panel = document.querySelector("#ab-panel");
-  /* DEBUG */
-  console.log("[dbg] wsMsgs:", wsLog.reduce((a, w) => a + w.frames.length, 0), "status:", (document.querySelector("#ab-status") || {}).textContent, "vw:", (document.querySelector("#ab-viewwrap") || {}).innerHTML ? "yes" : "no");
-  console.log("[dbg] wsLog:", JSON.stringify(wsLog));
-  if (document.querySelector("#ab-viewwrap")) console.log("[dbg] vw children:", [...document.querySelector("#ab-viewwrap").children].map((c) => c.id || c.className).join(","));
 
   check("kernel panel opens with a live iframe", () => !!panel && !!document.querySelector("#ab-live"));
   check("View menu button rendered (kernel mode)", () => !!document.querySelector("#ab-view-btn"));
@@ -79,6 +75,7 @@ function check(label, fn) { try { const v = typeof fn === "function" ? fn() : fn
   document.querySelector("[data-ab-zoom='in']").click();
   const live = document.querySelector("#ab-live");
   check("zoom in scales the live view (1.25×)", () => /scale\(1\.25\)/.test(live.style.transform) && live.style.width === "80%");
+  check("View button shows the live zoom %", () => /125%/.test(document.querySelector("#ab-view-btn").textContent));
   document.querySelector("[data-ab-zoom='out']").click();
   check("zoom out returns toward 100%", () => live.style.transform === "" || /scale\(1\)/.test(live.style.transform));
   document.querySelector("[data-ab-zoom='reset']").click();
@@ -112,6 +109,10 @@ function check(label, fn) { try { const v = typeof fn === "function" ? fn() : fn
      real network failures that jsdom cannot stage safely) */
   const src = fs.readFileSync(path.join(ROOT, "js/agent-browse.js"), "utf8");
   check("kernel-down keeps the viewport (no vw.remove)", () => !/vw\.remove\(\)/.test(src));
+  check("failed CLICK/TYPE are recorded so the model moves on", () => /steps\.push\("CLICK .* → NOT FOUND/.test(src) && /steps\.push\("TYPE .* → NO FIELD/.test(src));
+  check("repeated-step detector breaks open/seen/open loops", () => /sameStep\+\+/.test(src) && /same step repeated 3/.test(src));
+  check("run wraps up with a forced ANSWER near the step cap", () => /MAX_STEPS - 3/.test(src));
+  check("Escape closes the view menu", () => /key === "Escape"/.test(src) && /ab-menu/.test(src));
   check("kernel-down offers a Retry button", () => /ab-kretry/.test(src) && /Retry kernel/.test(src));
   check("fresh run clears the stale live view", () => /kernelResetLive/.test(src));
   check("empty reads retried via the text proxy", () => src.includes("https://r.jina.ai/"));

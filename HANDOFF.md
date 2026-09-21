@@ -3,6 +3,17 @@
 **Live site:** https://neurobot1s.github.io/terminal-brain/#/
 **Stack:** pure vanilla HTML/CSS/JS, classic `<script>` tags, no build step. GitHub Pages (branch `main`, root). Owner: Tanishq Lalwani.
 
+## Current state (2026-09-21, Round 8) — ALL 10 SUITES PASS, AGENT LOOP HARDENED + VIEW MENU POLISH
+All 10 test suites pass (boot, routes, interact, live, ai, agent, agent-browse, kernel, kernel-view, ab-trigger-boot). All JS `node --check` clean. Cache-buster bumped: agent-browse.js `?v=20260921a`.
+
+### Round 8 — "Improve it and continue"
+- **Failed CLICK/TYPE now reach STEPS SO FAR** (agent-browse.js runKernel). Before, only READ failures were recorded — a CLICK that found nothing was logged to the UI but invisible to the model, so it kept re-emitting the same dead click. Both now push an explicit instruction line (NOT FOUND / NO FIELD + what to try instead). Loop-breaker parity across all three interaction actions.
+- **Repeated-step detector:** 3 identical (action+arg) outcomes in a row → `bestEffortAnswer()` forces a wrap-up instead of letting the model grind (the "it just searches the same thing over and over" report).
+- **Wrap-up near the cap:** last 3 steps (`MAX_STEPS - 3`) inject a `⚠ WRAP UP` banner into the model prompt (new workflow rule 7: no new searches/opens, ANSWER with what you have) + rule 8 (stop repeating failing actions).
+- **PAGE TEXT window 900 → 1400 chars** in the per-step prompt — more retrieval context per step without changing step-token budget.
+- **View menu polish:** the ⛶ View button now shows the live zoom level ("⛶ View · 125%") after any zoom change; Escape closes the open menu (one shared module-level keydown listener, same pattern as click-away — no per-open listener stacking).
+- **Test hygiene:** removed the leftover `[dbg]` console dumps from tests/kernel-view.test.js; added 5 regression checks (failed CLICK/TYPE recording, repeated-step detector, wrap-up banner, zoom % on button, Escape close) — all verified running (not skipped).
+
 ## Current state (2026-09-20, Round 7) — ALL 10 SUITES PASS, VIEW-MENU TEST RACE FIXED
 All 10 test suites pass (boot, routes, interact, live, ai, agent, agent-browse, kernel, kernel-view, ab-trigger-boot). All JS `node --check` clean.
 

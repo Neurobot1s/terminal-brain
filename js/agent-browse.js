@@ -202,6 +202,8 @@
       }
       var cur = menu.querySelector("[data-ab-zoom='reset']");
       if (cur) cur.textContent = zoom === 1 ? "◻  100%" : "◻  " + Math.round(zoom * 100) + "%";
+      var b2 = wrap.querySelector("#ab-view-btn");
+      if (b2) b2.textContent = zoom === 1 ? "⛶ View" : "⛶ View · " + Math.round(zoom * 100) + "%";
     }
     function markView(mode) {
       menu.querySelectorAll("[data-ab-view]").forEach(function (b) {
@@ -265,6 +267,13 @@
   document.addEventListener("click", function () {
     var m = document.querySelector("#ab-menu");
     if (m && !m.hidden) m.hidden = true;
+  });
+  /* Escape closes the open menu too (one shared listener, like click-away) */
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      var m = document.querySelector("#ab-menu");
+      if (m && !m.hidden) m.hidden = true;
+    }
   });
 
   /* Kernel down? DON'T delete the viewport — collapse it into a slim strip
@@ -432,10 +441,13 @@
     var extract = K.extractPageText || function (d2, m) { return d2.text("body").then(function (t) { return { title: "", url: "", text: String(t || "").slice(0, m || 3600) }; }); };
     var sweep = K.sweepPage || function () { return Promise.resolve(); };
     var waited = 0; /* WAIT uses: model can't retry it forever */
+    var sameStep = 0, lastSig = ""; /* repeated-step detector: 3 identical outcomes in a row → force a wrap-up */
     function step(n, d) {
       if (n > MAX_STEPS || !document.querySelector("#ab-panel")) return Promise.resolve();
       status("step " + n + "/" + MAX_STEPS);
       foot("thinking with your local NVIDIA model…");
+      /* near the cap, tell the model to wrap up instead of starting new work */
+      var wrapping = n >= MAX_STEPS - 3;
       return Promise.all([pageContext(d), currentUrl(d), extract(d, 1600).catch(function () { return null; }), collectLinks(d, 6)]).then(function (ctx) {
         var elems = ctx[0], here = ctx[1] || "", snap = ctx[2] || null, links = ctx[3] || [];
         var elemLines = (elems || []).slice(0, 30).map(function (e) {
@@ -470,11 +482,14 @@
           "4) READ the page when you need its content — element labels alone are not the content. A page whose text comes back empty is auto-retried through a text proxy; a URL that FAILED twice is dead — never READ it again.\n" +
           "5) Never OPEN the page you are already on (see CURRENT URL). Do not repeat a step that already failed the same way.\n" +
           "6) When the task is done or you have what you need, ANSWER immediately — for DOING tasks report exactly what you did (accounts created, forms submitted, addresses/codes used); for research report the facts.\n" +
+          "7) TIME BUDGET: when told WRAP UP (or steps are nearly exhausted) do NOT start new searches/opens — ANSWER with the best result you have.\n" +
+          "8) If the same action keeps failing the same way, stop repeating it — take a DIFFERENT approach or ANSWER with what you have.\n" +
           "Start with OPEN (if the request names a site) or SEARCH (only if you don't know where to go). No other text.",
           "USER'S REQUEST (the ONLY thing you should act on): " + query +
           "\nTASK TYPE: " + (doing ? "DOING — the user wants something DONE on a website. You MUST interact (OPEN/CLICK/TYPE/KEY), not just read." : "RESEARCH — find and report information.") +
+          (wrapping ? "\n⚠ WRAP UP — only a few steps remain. Answer NOW with what you have; do not start new pages.\n" : "") +
           "\n\nCURRENT URL: " + (here || "(unknown)") +
-          "\n\nPAGE TEXT (first 900 chars):\n" + (snap && String(snap.text || "").replace(/\s+/g, " ").trim().slice(0, 900) || "(unavailable)") +
+          "\n\nPAGE TEXT (first 1400 chars):\n" + (snap && String(snap.text || "").replace(/\s+/g, " ").trim().slice(0, 1400) || "(unavailable)") +
           "\n\nLINKS ON THIS PAGE (title → url):\n" + (linkLines || "(none)") +
           "\n\nCURRENT PAGE ELEMENTS:\n" + (elemLines || "(none detected)") +
           "\n\nSTEPS SO FAR:\n" + (steps.length ? steps.join("\n") : "(none yet)"),
@@ -487,6 +502,16 @@
         var fixed = fixEcho(action, arg, query);
         if (!fixed) { log("model echoed the demo example — answering from the gathered research instead", "warn"); return bestEffortAnswer(query, steps, lastPage); }
         action = fixed.action; arg = fixed.arg;
+        /* repeated-step breaker: three IDENTICAL outcomes in a row means the
+           model is grinding — force a wrap-up ("it just searches the same
+           thing over and over") */
+        var sig = action + " " + String(arg || "").toLowerCase().replace(/\s+/g, " ").slice(0, 80);
+        if (sig === lastSig && action !== "ANSWER") sameStep++; else sameStep = 0;
+        lastSig = sig;
+        if (sameStep >= 2) {
+          log("same step repeated 3× — forcing a wrap-up", "warn");
+          return bestEffortAnswer(query, steps, lastPage);
+        }
         if (action === "ANSWER") {
           log("ANSWER: " + arg, "ok");
           status("done");
@@ -497,7 +522,12 @@
           log("clicking “" + arg + "”", "act");
           foot("cloud browser → click");
           return resolveAndClick(d, arg).then(function (r) {
-            if (!r || !r.ok) { log("no clickable “" + arg + "” on this page", "err"); return step(n + 1, d); }
+            if (!r || !r.ok) {
+              log("no clickable “" + arg + "” on this page", "err");
+              /* failures must reach STEPS SO FAR or the model re-emits them forever */
+              steps.push("CLICK “" + arg + "” → NOT FOUND on this page. Look at CURRENT PAGE ELEMENTS and LINKS; try a different label, SCROLL, or ANSWER.");
+              return step(n + 1, d);
+            }
             log("clicked" + (r.label ? " “" + r.label + "”" : ""), "ok");
             steps.push("CLICK “" + arg + "” → clicked" + (r.label ? " (“" + r.label + "”)" : ""));
             return settleIf(d).then(function () { return sleep(600); }).then(function () { return step(n + 1, d); });
@@ -509,7 +539,11 @@
           log("typing into “" + fld + "”", "act");
           foot("cloud browser → type");
           return resolveAndType(d, fld, val).then(function (r) {
-            if (!r || !r.ok) { log("no field matching “" + fld + "” here", "err"); return step(n + 1, d); }
+            if (!r || !r.ok) {
+              log("no field matching “" + fld + "” here", "err");
+              steps.push("TYPE " + fld + " → NO FIELD on this page. Check CURRENT PAGE ELEMENTS for the real field name, SCROLL if below the fold, or ANSWER.");
+              return step(n + 1, d);
+            }
             log("typed into " + (r.filled || fld), "ok");
             steps.push("TYPE " + fld + " → filled " + (r.filled || fld) + " with " + String(val).slice(0, 60));
             return sleep(400).then(function () { return step(n + 1, d); });
